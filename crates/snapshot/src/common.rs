@@ -1,29 +1,29 @@
 use std::{
     collections::BTreeMap,
+    ffi::OsStr,
     fs,
     io::{BufWriter, Read as _, Write as _},
     num::NonZeroUsize,
     time::Instant,
 };
 
+use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::{
     compression::{CompressReader, CompressType},
-    dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
+    dir_trie::{o_excl, o_rdonly, DirTrie},
+    lockfile::Lockfile,
 };
 use spacetimedb_lib::bsatn;
-use spacetimedb_paths::server::SnapshotFilePath;
-use spacetimedb_primitives::TableId;
-use spacetimedb_table::{
-    blob_store::BlobHash,
-    page::Page,
-    page_pool::PagePool,
-    table::Table,
-    tiered::{BlobMap, ObjectStoreError, ScannedBlob},
+use spacetimedb_paths::{
+    server::{SnapshotDirPath, SnapshotFilePath, SnapshotsPath},
+    FromPathUnchecked as _,
 };
+use spacetimedb_primitives::TableId;
+use spacetimedb_table::{blob_store::BlobHash, page::Page, page_pool::PagePool, tiered::BlobMap};
 
 use crate::{
-    v0, v1, BlobEntry, FileOrDirPath, ObjectType, Snapshot, SnapshotError, SnapshotReadKindMetrics, TableEntry,
-    TablePages, MAGIC, ZERO_HASH_DENOTING_ABSENT_PAGE,
+    v0, v1, BlobEntry, FileOrDirPath, ObjectType, ParentRepo, Snapshot, SnapshotError, SnapshotReadKindMetrics,
+    TableEntry, TablePages, MAGIC, SNAPSHOT_DIR_EXT, ZERO_HASH_DENOTING_ABSENT_PAGE,
 };
 
 pub(crate) fn read_from_file(path: &SnapshotFilePath) -> Result<(Snapshot, CompressType), SnapshotError> {
@@ -250,72 +250,6 @@ fn reconstruct_one_table_pages(
         .collect()
 }
 
-pub(crate) fn write_blobs<'a>(
-    repo: &DirTrie,
-    parent: Option<&DirTrie>,
-    mut on_write: impl FnMut(BlobEntry),
-    counter: &mut CountCreated,
-    blobs: impl Iterator<Item = Result<ScannedBlob<'a>, ObjectStoreError>>,
-) -> Result<(), SnapshotError> {
-    let io_error = |hash, cause| SnapshotError::WriteObject {
-        ty: ObjectType::Blob(hash),
-        dest_repo: repo.root().to_path_buf(),
-        source_repo: parent.map(|src| src.root().to_path_buf()),
-        cause,
-    };
-    for blob in blobs {
-        let blob = blob?;
-        repo.hardlink_or_write(parent, &blob.hash.data, || blob.data, counter)
-            .map_err(|e| io_error(blob.hash, e))?;
-        on_write(BlobEntry {
-            hash: blob.hash,
-            uses: blob.uses.get() as u32,
-        });
-    }
-
-    Ok(())
-}
-
-pub(crate) fn write_tables<'a>(
-    repo: &DirTrie,
-    parent: Option<&DirTrie>,
-    mut on_write: impl FnMut(TableEntry),
-    counter: &mut CountCreated,
-    tables: impl Iterator<Item = &'a mut Table>,
-) -> Result<(), SnapshotError> {
-    for table in tables {
-        let mut pages = Vec::new();
-        for page in table.iter_pages_with_hashes() {
-            let hash = match page? {
-                None => ZERO_HASH_DENOTING_ABSENT_PAGE,
-                Some((hash, page)) => {
-                    let page = page.read();
-                    debug_assert!(page.unmodified_hash().copied() == Some(hash));
-
-                    repo.hardlink_or_write(parent, hash.as_bytes(), || bsatn::to_vec(&*page).unwrap(), counter)
-                        .map_err(|cause| SnapshotError::WriteObject {
-                            ty: ObjectType::Page(hash),
-                            dest_repo: repo.root().to_path_buf(),
-                            source_repo: parent.map(|src| src.root().to_path_buf()),
-                            cause,
-                        })?;
-
-                    hash
-                }
-            };
-
-            pages.push(hash);
-        }
-
-        on_write(TableEntry {
-            table_id: table.schema.table_id,
-            pages,
-        });
-    }
-
-    Ok(())
-}
-
 pub(crate) fn write_snapshot_file(path: SnapshotFilePath, snapshot_bsatn: &[u8]) -> Result<(), SnapshotError> {
     let hash = blake3::hash(snapshot_bsatn);
 
@@ -334,4 +268,51 @@ pub(crate) fn write_snapshot_file(path: SnapshotFilePath, snapshot_bsatn: &[u8])
     }
 
     Ok(())
+}
+
+pub(crate) fn latest_snapshot_older_than(
+    root: &SnapshotsPath,
+    upper_bound: TxOffset,
+) -> Result<Option<TxOffset>, SnapshotError> {
+    all_snapshots(root).map(|iter| iter.filter(|&tx_offset| tx_offset <= upper_bound).max())
+}
+
+pub(crate) fn all_snapshots(root: &SnapshotsPath) -> Result<impl Iterator<Item = TxOffset> + use<>, SnapshotError> {
+    Ok(root
+        // Item = Result<DirEntry>
+        .read_dir()?
+        // Item = DirEntry
+        .filter_map(Result::ok)
+        // Item = PathBuf
+        .map(|dirent| dirent.path())
+        // Ignore entries not shaped like snapshot directories.
+        .filter(|path| path.extension() == Some(OsStr::new(SNAPSHOT_DIR_EXT)))
+        // Ignore entries whose lockfile still exists.
+        .filter(|path| !Lockfile::lock_path(path).exists())
+        // Parse each entry's TxOffset from the file name; ignore unparsable.
+        // Also ignore if the snapshot file doesn't exists.
+        // This can happen on incomplete transfers, or if something went
+        // wrong during creation.
+        // Item = TxOffset
+        .filter_map(|path| {
+            let offset = TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()?;
+            let snapshot_file = SnapshotDirPath::from_path_unchecked(path).snapshot_file(offset);
+            if !snapshot_file.0.exists() {
+                None
+            } else {
+                Some(offset)
+            }
+        }))
+}
+
+pub(crate) fn parent_repo(root: &SnapshotsPath, before: TxOffset) -> Result<Option<ParentRepo>, SnapshotError> {
+    let Some(offset) = latest_snapshot_older_than(root, before)? else {
+        return Ok(None);
+    };
+
+    let parent_dir = root.snapshot_dir(offset);
+    let (parent_snapshot, _) = Snapshot::read_from_file(&parent_dir.snapshot_file(offset))?;
+    let parent_repo = parent_snapshot.into_parent_repo(&parent_dir)?;
+
+    Ok(Some(parent_repo))
 }

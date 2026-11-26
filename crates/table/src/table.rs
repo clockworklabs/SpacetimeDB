@@ -4,7 +4,7 @@ use crate::{
     page,
     tiered::{
         BlobError, BlobHandle, BlobReadSet, BlobSet, DiskPinnedBlobHandle, DiskPinnedPageHandle, EvictionError,
-        EvictionPolicy, ObjectStoreError, PageBorrow, PageError, PageHandle, PageManager, PageRef, PageSet,
+        EvictionPolicy, ObjectStoreError, PageBorrow, PageError, PageHandle, PageHash, PageManager, PageRef, PageSet,
         PreparedCommit, ReservedPage,
     },
     var_len::VarLenMembers as _,
@@ -3417,19 +3417,12 @@ impl Table {
     }
 
     /// Returns the pages storing the physical rows of this table.
-    fn pages(&self) -> &PageSet {
+    pub fn pages(&self) -> &PageSet {
         &self.inner.pages
     }
 
-    /// Iterates over each [`Page`] in this table, ensuring that its hash is computed before yielding it.
-    ///
-    /// Used when capturing a snapshot.
-    //
-    // TODO(disk-tables): Avoid faulting in pages that are already on disk.
-    pub fn iter_pages_with_hashes(
-        &mut self,
-    ) -> impl Iterator<Item = Result<Option<(blake3::Hash, PageRef<'_>)>, PageError>> {
-        self.inner.pages.iter_pages_with_hashes()
+    pub(crate) fn pages_mut(&mut self) -> &mut PageSet {
+        &mut self.inner.pages
     }
 
     /// Returns the number of pages storing the physical rows of this table.
@@ -3453,6 +3446,15 @@ impl Table {
         self.scan_rows(blobs)
             .map(|row_ref| row_ref.map(|row_ref| (row_ref.row_hash(), row_ref.pointer())))
             .collect()
+    }
+
+    /// Iterate over all pages in this table, faulting them in as needed.
+    ///
+    /// This is exposed for testing only!
+    pub fn iter_pages_with_hashes(
+        &mut self,
+    ) -> impl Iterator<Item = Result<Option<(PageHash, PageRef<'_>)>, PageError>> {
+        self.inner.pages.iter_pages_with_hashes()
     }
 }
 

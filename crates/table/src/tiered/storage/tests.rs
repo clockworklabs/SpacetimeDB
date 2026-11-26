@@ -82,6 +82,8 @@ unsafe impl RemoveObject for Arc<TestStore> {
     }
 }
 
+impl HardlinkObject for Arc<TestStore> {}
+
 impl MemoryUsage for TestStore {
     fn heap_usage(&self) -> usize {
         self.inner.heap_usage()

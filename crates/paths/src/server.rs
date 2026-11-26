@@ -243,6 +243,15 @@ impl SnapshotDirPath {
             .file_stem()
             .and_then(|s| s.to_str()?.split('.').next()?.parse::<u64>().ok())
     }
+
+    pub fn snapshots(&self) -> SnapshotsPath {
+        SnapshotsPath(
+            self.0
+                .parent()
+                .expect("SnapshotDirPath should have a parent")
+                .to_path_buf(),
+        )
+    }
 }
 
 path_type! {

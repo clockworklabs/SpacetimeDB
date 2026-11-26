@@ -2,7 +2,7 @@ use std::{io, sync::Arc};
 
 use spacetimedb_memory_usage::MemoryUsage;
 
-use crate::page_pool::PagePool;
+use crate::{page_pool::PagePool, table::Table};
 
 mod blob_set;
 mod budget;
@@ -13,21 +13,23 @@ pub mod metrics;
 mod page_manager;
 mod page_ref;
 mod page_set;
+mod snapshot;
 mod storage;
 
 pub(crate) use self::{blob_set::DiskPinnedBlobHandle, page_set::DiskPinnedPageHandle};
 pub use self::{
-    blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobScan, BlobSet, ScannedBlob, ScannedBlobData},
+    blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
     budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
-    error::{BlobError, EvictionError, ObjectStoreError, PageError, TrimError},
+    error::{BlobError, EvictionError, ObjectStoreError, PageError, SnapshotError, TrimError},
     map::{ObjectKey, PageHash},
     mem::ResidentObjects,
     page_manager::{PageHandle, PageManager, ReservedPage},
     page_ref::{PageBorrow, PageRead, PageRef},
     page_set::{PageSet, PreparedCommit},
+    snapshot::{Snapshot, SnapshotObject, SnapshotObjectStorage},
     storage::{
-        BackingStore, LocalBackingStore, LocalStorage, MemoryObjectStore, Object, ObjectBytes, ObjectMetadata,
-        ObjectStore, RemoteBackingStore, RemoteStorage, RemoveObject, TieredStorage,
+        BackingStore, Fsync, HardlinkObject, LocalBackingStore, LocalStorage, MemoryObjectStore, Object, ObjectBytes,
+        ObjectMetadata, ObjectStore, RemoteBackingStore, RemoteStorage, RemoveObject, TieredStorage,
     },
 };
 
@@ -135,6 +137,20 @@ impl TieredDatabaseStorage {
             cache,
             store,
         }
+    }
+
+    pub fn create_snapshot<'a>(
+        &self,
+        storage: &impl SnapshotObjectStorage,
+        tables: impl IntoIterator<Item = &'a mut Table>,
+    ) -> Result<Snapshot, SnapshotError> {
+        Snapshot::create(
+            self,
+            storage,
+            tables
+                .into_iter()
+                .map(|table| (table.schema.table_id, table.pages_mut())),
+        )
     }
 
     /// Attempt to free space by reclaiming orphaned objects and evicting from

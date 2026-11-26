@@ -1,11 +1,12 @@
-use std::{collections::BTreeSet, io::Cursor, num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeSet, io::Cursor, sync::Arc};
 
 use proptest::{collection::vec, prelude::*};
 use spacetimedb_sats::{product, AlgebraicType};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::{
     indexes::SquashedOffset,
-    tiered::{EvictionPolicy, ScannedBlobData, TieredDatabaseStorage, TieredStorageConfig},
+    table::Table,
+    tiered::{EvictionPolicy, TieredDatabaseStorage, TieredStorageConfig},
 };
 use tempfile::tempdir;
 
@@ -74,29 +75,32 @@ fn capture(
     };
     let mut writable = manifest.into_writable(&dir)?;
 
-    // Capture actual table pages and a blob through the version-specific writer.
     let storage = TieredDatabaseStorage::empty(TieredStorageConfig::new_for_test());
     let mut tables = [new_table(TABLE, &storage), new_table(EMPTY_TABLE, &storage)];
     tables[0].insert(storage.blobs(), &product![row])?;
-    let blob = ScannedBlob {
-        hash: BlobHash::hash_from_bytes(bytes),
-        uses: NonZeroUsize::new(BLOB_USES.try_into().unwrap()).unwrap(),
-        data: ScannedBlobData::Resident(bytes),
-    };
-    let mut counter = CountCreated::default();
-    writable.write_objects(None, tables.iter_mut(), std::iter::once(Ok(blob)), &mut counter)?;
-    assert_eq!(counter.objects_written, 2);
-    assert_eq!(counter.objects_hardlinked, 0);
 
-    // Sparse tables retain absent page slots, which must never become object files.
-    match &mut writable {
-        WritableSnapshot::V0 { manifest, .. } => {
-            manifest.tables[0].pages.push(ZERO_HASH_DENOTING_ABSENT_PAGE);
-        }
-        WritableSnapshot::V1 { manifest, .. } => {
-            manifest.get_mut().tables[0].pages.push(ZERO_HASH_DENOTING_ABSENT_PAGE);
-        }
+    for _ in 0..BLOB_USES {
+        storage.blobs().insert(EvictionPolicy::Memory, bytes)?;
     }
+
+    let (blobs, tables) = storage.create_snapshot(&writable, tables.iter_mut())?.into_parts();
+    writable.set_blobs(blobs.into_iter().map(|(hash, uses)| BlobEntry {
+        hash,
+        uses: uses.get() as _,
+    }));
+    writable.set_tables(tables.into_iter().map(|(table_id, pages)| {
+        let mut pages = pages
+            .into_iter()
+            .map(|maybe_hash| maybe_hash.map(Into::into).unwrap_or(ZERO_HASH_DENOTING_ABSENT_PAGE))
+            .collect::<Vec<_>>();
+
+        if table_id == TABLE {
+            pages.push(ZERO_HASH_DENOTING_ABSENT_PAGE);
+        }
+
+        TableEntry { table_id, pages }
+    }));
+
     let manifest = writable.manifest();
     let pending = UnflushedSnapshot {
         inner: Some(UnflushedSnapshotInner {

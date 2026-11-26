@@ -30,7 +30,7 @@ use spacetimedb_fs_utils::compression::{
     compress_with_zstd, CompressCount, CompressReader, CompressType, CompressionAlgorithm,
 };
 use spacetimedb_fs_utils::{
-    dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
+    dir_trie::{o_excl, o_rdonly, DirTrie},
     lockfile::{Lockfile, LockfileError},
 };
 use spacetimedb_lib::ser::Serializer;
@@ -39,10 +39,12 @@ use spacetimedb_paths::server::{ArchivedSnapshotDirPath, SnapshotDirPath, Snapsh
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
+use spacetimedb_table::table::Table;
 use spacetimedb_table::tiered::{
-    BlobError, BlobMap, BlobScan, ObjectKey, ObjectStoreError, PageError, PageHash, ScannedBlob,
+    self, BlobError, BlobMap, ObjectKey, ObjectStoreError, PageError, PageHash, SnapshotObjectStorage,
+    TieredDatabaseStorage,
 };
-use spacetimedb_table::{blob_store::BlobHash, page::Page, page_pool::PagePool, table::Table};
+use spacetimedb_table::{blob_store::BlobHash, page::Page, page_pool::PagePool};
 use std::fs::{self, File};
 use std::io;
 use std::ops::{Range, RangeBounds};
@@ -189,6 +191,8 @@ pub enum SnapshotError {
     Blob(#[from] BlobError),
     #[error(transparent)]
     ObjectStore(#[from] ObjectStoreError),
+    #[error(transparent)]
+    Tiered(#[from] tiered::SnapshotError),
 }
 
 impl SnapshotError {
@@ -283,6 +287,16 @@ pub struct UnflushedSnapshot {
 }
 
 impl UnflushedSnapshot {
+    fn new(snapshot_dir: SnapshotDirPath, snapshot: WritableSnapshot, lockfile: Lockfile) -> Self {
+        let inner = UnflushedSnapshotInner {
+            snapshot_dir,
+            repo: snapshot,
+            lockfile,
+        };
+
+        Self { inner: Some(inner) }
+    }
+
     /// Return the transaction offset this pending snapshot will finalize at.
     pub fn tx_offset(&self) -> TxOffset {
         self.inner.as_ref().unwrap().repo.tx_offset()
@@ -358,7 +372,26 @@ impl PendingSnapshot for UnflushedSnapshot {
     }
 }
 
-pub enum WritableSnapshot {
+pub struct WritableSnapshot {
+    parent: Option<ParentRepo>,
+    inner: WritableSnapshotInner,
+}
+
+enum ParentRepo {
+    V0(v0::SnapshotRepo),
+    V1(v1::SnapshotRepo),
+}
+
+impl ParentRepo {
+    fn file_path(&self, key: ObjectKey) -> PathBuf {
+        match self {
+            Self::V0(inner) => inner.file_path(key),
+            Self::V1(inner) => inner.file_path(key),
+        }
+    }
+}
+
+enum WritableSnapshotInner {
     V0 {
         manifest: v0::Snapshot,
         repo: v0::SnapshotRepo,
@@ -371,30 +404,30 @@ pub enum WritableSnapshot {
 
 impl WritableSnapshot {
     pub fn root(&self) -> &Path {
-        match self {
-            Self::V0 { repo, .. } => repo.root(),
-            Self::V1 { repo, .. } => repo.root(),
+        match &self.inner {
+            WritableSnapshotInner::V0 { repo, .. } => repo.root(),
+            WritableSnapshotInner::V1 { repo, .. } => repo.root(),
         }
     }
 
     pub fn file_path(&self, key: ObjectKey) -> PathBuf {
-        match self {
-            Self::V0 { repo, .. } => repo.file_path(key),
-            Self::V1 { repo, .. } => repo.file_path(key),
+        match &self.inner {
+            WritableSnapshotInner::V0 { repo, .. } => repo.file_path(key),
+            WritableSnapshotInner::V1 { repo, .. } => repo.file_path(key),
         }
     }
 
     pub fn tx_offset(&self) -> TxOffset {
-        match self {
-            Self::V0 { manifest, .. } => manifest.tx_offset,
-            Self::V1 { manifest, .. } => manifest.tx_offset,
+        match &self.inner {
+            WritableSnapshotInner::V0 { manifest, .. } => manifest.tx_offset,
+            WritableSnapshotInner::V1 { manifest, .. } => manifest.tx_offset,
         }
     }
 
     pub fn manifest(&self) -> Snapshot {
-        match self {
-            Self::V0 { manifest, .. } => Snapshot::V0(manifest.clone()),
-            Self::V1 { manifest, .. } => Snapshot::V1(manifest.clone()),
+        match &self.inner {
+            WritableSnapshotInner::V0 { manifest, .. } => Snapshot::V0(manifest.clone()),
+            WritableSnapshotInner::V1 { manifest, .. } => Snapshot::V1(manifest.clone()),
         }
     }
 
@@ -403,27 +436,31 @@ impl WritableSnapshot {
     }
 
     pub fn objects(&self) -> impl Iterator<Item = ObjectKey> {
-        let (v0, v1) = match self {
-            Self::V0 { manifest, .. } => (Some(manifest.objects()), None),
-            Self::V1 { manifest, .. } => (None, Some(manifest.objects())),
+        let (v0, v1) = match &self.inner {
+            WritableSnapshotInner::V0 { manifest, .. } => (Some(manifest.objects()), None),
+            WritableSnapshotInner::V1 { manifest, .. } => (None, Some(manifest.objects())),
         };
 
         v0.into_iter().flatten().chain(v1.into_iter().flatten())
     }
 
     fn object_keys_and_file_paths(&self) -> impl Iterator<Item = (ObjectKey, PathBuf)> {
-        let (v0, v1) = match self {
-            Self::V0 { manifest, repo } => (Some(manifest.objects().map(|key| (key, repo.file_path(key)))), None),
-            Self::V1 { manifest, repo } => (None, Some(manifest.objects().map(|key| (key, repo.file_path(key))))),
+        let (v0, v1) = match &self.inner {
+            WritableSnapshotInner::V0 { manifest, repo } => {
+                (Some(manifest.objects().map(|key| (key, repo.file_path(key)))), None)
+            }
+            WritableSnapshotInner::V1 { manifest, repo } => {
+                (None, Some(manifest.objects().map(|key| (key, repo.file_path(key)))))
+            }
         };
 
         v0.into_iter().flatten().chain(v1.into_iter().flatten())
     }
 
     fn commit(self) -> Result<(), SnapshotError> {
-        match self {
-            WritableSnapshot::V0 { manifest, repo } => manifest.write_snapshot_file(&repo),
-            WritableSnapshot::V1 { manifest, repo } => manifest.write_snapshot_file(&repo),
+        match self.inner {
+            WritableSnapshotInner::V0 { manifest, repo } => manifest.write_snapshot_file(&repo),
+            WritableSnapshotInner::V1 { manifest, repo } => manifest.write_snapshot_file(&repo),
         }
     }
 
@@ -432,8 +469,8 @@ impl WritableSnapshot {
         page_pool: &PagePool,
         metrics: &mut SnapshotReadMetrics,
     ) -> Result<(BlobMap, BTreeMap<TableId, TablePages>), SnapshotError> {
-        match self {
-            Self::V0 { manifest, repo } => {
+        match &self.inner {
+            WritableSnapshotInner::V0 { manifest, repo } => {
                 let blob_start = Instant::now();
                 let blob_store = repo.reconstruct_blobs(manifest, &mut metrics.blob)?;
                 metrics.blob.read_time = blob_start.elapsed();
@@ -444,7 +481,7 @@ impl WritableSnapshot {
 
                 Ok((blob_store, tables))
             }
-            Self::V1 { manifest, repo } => {
+            WritableSnapshotInner::V1 { manifest, repo } => {
                 let blob_start = Instant::now();
                 let blob_store = repo.reconstruct_blobs(manifest, &mut metrics.blob)?;
                 metrics.blob.read_time = blob_start.elapsed();
@@ -455,19 +492,6 @@ impl WritableSnapshot {
 
                 Ok((blob_store, tables))
             }
-        }
-    }
-
-    fn write_objects<'db, 'a>(
-        &mut self,
-        parent: Option<&SnapshotDirPath>,
-        tables: impl Iterator<Item = &'db mut Table>,
-        blobs: impl Iterator<Item = Result<ScannedBlob<'a>, ObjectStoreError>>,
-        counter: &mut CountCreated,
-    ) -> Result<(), SnapshotError> {
-        match self {
-            Self::V0 { manifest, repo } => manifest.write_objects(repo, parent, tables, blobs, counter),
-            Self::V1 { manifest, repo } => manifest.write_objects(repo, parent, tables, blobs, counter),
         }
     }
 
@@ -483,16 +507,52 @@ impl WritableSnapshot {
             Ok(false)
         }
     }
+
+    fn set_blobs(&mut self, blobs: impl Iterator<Item = BlobEntry>) {
+        match &mut self.inner {
+            WritableSnapshotInner::V0 { manifest, .. } => manifest.blobs.extend(blobs),
+            WritableSnapshotInner::V1 { manifest, .. } => manifest.blobs_mut().extend(blobs),
+        }
+    }
+
+    fn set_tables(&mut self, tables: impl Iterator<Item = TableEntry>) {
+        match &mut self.inner {
+            WritableSnapshotInner::V0 { manifest, .. } => manifest.tables.extend(tables),
+            WritableSnapshotInner::V1 { manifest, .. } => manifest.tables_mut().extend(tables),
+        }
+    }
 }
 
 impl ObjectProvider for WritableSnapshot {
     type Reader = <DirTrie as ObjectProvider>::Reader;
 
     async fn object_reader(&self, key: ObjectKey) -> io::Result<Self::Reader> {
-        match self {
-            Self::V0 { repo, .. } => repo.object_reader(key).await,
-            Self::V1 { repo, .. } => repo.object_reader(key).await,
+        match &self.inner {
+            WritableSnapshotInner::V0 { repo, .. } => repo.object_reader(key).await,
+            WritableSnapshotInner::V1 { repo, .. } => repo.object_reader(key).await,
         }
+    }
+}
+
+impl SnapshotObjectStorage for WritableSnapshot {
+    fn write(&self, object: tiered::SnapshotObject<'_>) -> io::Result<()> {
+        let path = match &self.inner {
+            WritableSnapshotInner::V0 { repo, .. } => repo.file_path(object.key()),
+            WritableSnapshotInner::V1 { repo, .. } => repo.file_path(object.key()),
+        };
+        fs::create_dir_all(path.parent().expect("dir trie file paths have a parent"))?;
+
+        // Avoid writing resident objects on each snapshot.
+        if let Some((parent_repo, resident_object)) = self.parent.as_ref().zip(object.as_resident()) {
+            let parent_path = parent_repo.file_path(resident_object.key());
+            if parent_path.is_file() {
+                fs::hard_link(&parent_path, &path)?;
+
+                return Ok(());
+            }
+        }
+
+        object.write(path, tiered::Fsync::Defer)
     }
 }
 
@@ -592,16 +652,31 @@ impl Snapshot {
         }
     }
 
-    pub fn into_writable(self, dir: &SnapshotDirPath) -> io::Result<WritableSnapshot> {
+    pub fn into_writable(self, dir: &SnapshotDirPath) -> Result<WritableSnapshot, SnapshotError> {
         match self {
             Self::V0(inner) => {
                 let repo = inner.repo(dir)?;
-                Ok(WritableSnapshot::V0 { manifest: inner, repo })
+                let parent = repo.parent()?;
+                Ok(WritableSnapshot {
+                    parent,
+                    inner: WritableSnapshotInner::V0 { manifest: inner, repo },
+                })
             }
             Self::V1(inner) => {
                 let repo = inner.repo(dir)?;
-                Ok(WritableSnapshot::V1 { manifest: inner, repo })
+                let parent = repo.parent()?;
+                Ok(WritableSnapshot {
+                    parent,
+                    inner: WritableSnapshotInner::V1 { manifest: inner, repo },
+                })
             }
+        }
+    }
+
+    pub(crate) fn into_parent_repo(self, dir: &SnapshotDirPath) -> io::Result<ParentRepo> {
+        match self {
+            Self::V0(inner) => inner.repo(dir).map(ParentRepo::V0),
+            Self::V1(inner) => inner.repo(dir).map(ParentRepo::V1),
         }
     }
 }
@@ -773,76 +848,50 @@ impl SnapshotRepository {
     /// Also note that the snapshot remains locked for as long as [UnflushedSnapshot]
     /// is alive. It will not appear in [Self::all_snapshots] nor can it be
     /// modified by methods in [SnapshotRepository].
-    pub fn create_snapshot<'db, 'b>(
+    pub fn create_snapshot<'db>(
         &self,
+        offset: TxOffset,
+        storage: &TieredDatabaseStorage,
         tables: impl Iterator<Item = &'db mut Table>,
-        blobs: BlobScan<'b>,
-        tx_offset: TxOffset,
     ) -> Result<UnflushedSnapshot, SnapshotError> {
-        // Invalidate equal to or newer than `tx_offset`.
-        //
-        // This is because snapshots don't currently track the epoch in which
-        // they were created:
-        //
-        // Say, for example, a snapshot was created at offset 10, then a leader
-        // failover causes the commitlog to be reset to offset 9. The next
-        // transaction (also offset 10) will trigger snapshot creation, but we'd
-        // mistake the existing snapshot (now invalid) as the previous snapshot.
-        self.invalidate_newer_snapshots(tx_offset.saturating_sub(1))?;
-
-        let snapshot_dir = self.snapshot_dir_path(tx_offset);
-
-        // Before performing any observable operations,
-        // acquire a lockfile on the snapshot you want to create.
-        // Because we could be compressing the snapshot.
+        self.invalidate_newer_snapshots(offset.saturating_sub(1))?;
+        let snapshot_dir = self.snapshot_dir_path(offset);
         let lockfile = Lockfile::for_file(&snapshot_dir)?;
-
-        // Create the snapshot directory.
         snapshot_dir.create()?;
 
-        // Build the in-memory `Snapshot` object.
-        let manifest = self.empty_manifest(tx_offset);
-
-        let mut counter = CountCreated::default();
-
-        let mut object_repo = manifest.into_writable(&snapshot_dir)?;
-        let parent = self.latest_snapshot()?.map(|offset| self.snapshot_dir_path(offset));
-        object_repo.write_objects(parent.as_ref(), tables, blobs.iter(), &mut counter)?;
-
-        log::info!(
-            "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
-            self.database_identity,
-            tx_offset,
-            counter.objects_hardlinked,
-            counter.objects_written,
-        );
-
-        Ok(UnflushedSnapshot {
-            inner: Some(UnflushedSnapshotInner {
-                snapshot_dir,
-                repo: object_repo,
-                lockfile,
-            }),
-        })
-    }
-
-    fn empty_manifest(&self, tx_offset: TxOffset) -> Snapshot {
         let manifest = v0::Snapshot {
             magic: MAGIC,
             version: CURRENT_SNAPSHOT_VERSION,
             database_identity: self.database_identity,
             replica_id: self.replica_id,
             module_abi_version: CURRENT_MODULE_ABI_VERSION,
-            tx_offset,
+            tx_offset: offset,
             blobs: vec![],
             tables: vec![],
         };
 
-        match CURRENT_SNAPSHOT_VERSION {
+        let manifest = match CURRENT_SNAPSHOT_VERSION {
             v0::SNAPSHOT_VERSION => Snapshot::V0(manifest),
             v1::SNAPSHOT_VERSION => Snapshot::V1(v1::Snapshot::new(manifest)),
             v => unreachable!("invalid CURRENT_SNAPSHOT_VERSION: {v}"),
-        }
+        };
+        let mut snapshot = manifest.into_writable(&snapshot_dir)?;
+        let (blobs, tables) = storage.create_snapshot(&snapshot, tables)?.into_parts();
+        snapshot.set_blobs(blobs.into_iter().map(|(hash, uses)| BlobEntry {
+            hash,
+            uses: uses.get() as u32,
+        }));
+        snapshot.set_tables(tables.into_iter().map(|(table_id, pages)| {
+            TableEntry {
+                table_id,
+                pages: pages
+                    .into_iter()
+                    .map(|page| page.map(Into::into).unwrap_or(ZERO_HASH_DENOTING_ABSENT_PAGE))
+                    .collect(),
+            }
+        }));
+
+        Ok(UnflushedSnapshot::new(snapshot_dir, snapshot, lockfile))
     }
 
     /// Get the path to the directory which would contain the snapshot of transaction `tx_offset`.
@@ -1034,41 +1083,11 @@ impl SnapshotRepository {
     /// Does not verify that the snapshot of the returned `TxOffset` is valid and uncorrupted,
     /// so a subsequent [`Self::read_snapshot`] may fail.
     pub fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
-        Ok(self
-            .all_snapshots()?
-            // Ignore `tx_offset`s greater than the current upper bound.
-            .filter(|tx_offset| *tx_offset <= upper_bound)
-            // Select the largest TxOffset.
-            .max())
+        common::latest_snapshot_older_than(&self.root, upper_bound)
     }
 
     pub fn all_snapshots(&self) -> Result<impl Iterator<Item = TxOffset> + use<>, SnapshotError> {
-        Ok(self
-            .root
-            // Item = Result<DirEntry>
-            .read_dir()?
-            // Item = DirEntry
-            .filter_map(Result::ok)
-            // Item = PathBuf
-            .map(|dirent| dirent.path())
-            // Ignore entries not shaped like snapshot directories.
-            .filter(|path| path.extension() == Some(OsStr::new(SNAPSHOT_DIR_EXT)))
-            // Ignore entries whose lockfile still exists.
-            .filter(|path| !Lockfile::lock_path(path).exists())
-            // Parse each entry's TxOffset from the file name; ignore unparsable.
-            // Also ignore if the snapshot file doesn't exists.
-            // This can happen on incomplete transfers, or if something went
-            // wrong during creation.
-            // Item = TxOffset
-            .filter_map(|path| {
-                let offset = TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()?;
-                let snapshot_file = SnapshotDirPath::from_path_unchecked(path).snapshot_file(offset);
-                if !snapshot_file.0.exists() {
-                    None
-                } else {
-                    Some(offset)
-                }
-            }))
+        common::all_snapshots(&self.root)
     }
 
     /// Return an interator of [`ArchivedSnapshotDirPath`] for all the archived snapshot directories on disk
@@ -1329,11 +1348,11 @@ pub trait SnapshotRepo: Send + Sync {
     fn database_identity(&self) -> Identity;
 
     /// Start creating a snapshot at `tx_offset` from the provided tables and blob store.
-    fn create_snapshot<'a, 'b>(
+    fn create_snapshot(
         &self,
-        tables: &mut dyn Iterator<Item = &'a mut Table>,
-        blobs: BlobScan<'b>,
         tx_offset: TxOffset,
+        storage: &TieredDatabaseStorage,
+        tables: &mut dyn Iterator<Item = &mut Table>,
     ) -> Result<Self::Pending, SnapshotError>;
 
     /// Reconstruct the snapshot at `tx_offset` using the supplied page pool.
@@ -1370,14 +1389,14 @@ impl SnapshotRepo for SnapshotRepository {
         SnapshotRepository::database_identity(self)
     }
 
-    fn create_snapshot<'a, 'b>(
+    fn create_snapshot(
         &self,
-        tables: &mut dyn Iterator<Item = &'a mut Table>,
-        blobs: BlobScan<'b>,
         tx_offset: TxOffset,
+        storage: &TieredDatabaseStorage,
+        tables: &mut dyn Iterator<Item = &mut Table>,
     ) -> Result<Self::Pending, SnapshotError> {
         Ok(Box::new(SnapshotRepository::create_snapshot(
-            self, tables, blobs, tx_offset,
+            self, tx_offset, storage, tables,
         )?))
     }
 

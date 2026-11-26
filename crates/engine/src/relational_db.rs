@@ -704,6 +704,7 @@ impl RelationalDB {
                 SnapshotError::Page(inner) => inner.is_transient(),
                 SnapshotError::Blob(inner) => inner.is_transient(),
                 SnapshotError::ObjectStore(inner) => inner.is_transient(),
+                SnapshotError::Tiered(inner) => inner.is_transient(),
             }
         }
 

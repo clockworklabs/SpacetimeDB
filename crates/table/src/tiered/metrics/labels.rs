@@ -63,6 +63,7 @@ pub enum DiskOperation {
     Read,
     Write,
     Delete,
+    Hardlink,
 }
 
 impl DiskOperation {
@@ -71,6 +72,7 @@ impl DiskOperation {
             Self::Read => "read",
             Self::Write => "write",
             Self::Delete => "delete",
+            Self::Hardlink => "hardlink",
         }
     }
 }

@@ -49,6 +49,7 @@ hashbrown.workspace = true
 itertools.workspace = true
 parking_lot.workspace = true
 smallvec.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 
 # For the 'proptest' feature.

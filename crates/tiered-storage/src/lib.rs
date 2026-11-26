@@ -1,14 +1,18 @@
+use core::fmt;
 use std::{
     fs,
     io::{self, Write as _},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_paths::server::TablesDir;
 use spacetimedb_snapshot::FileOrDirPath;
-use spacetimedb_table::tiered::metrics::{DiskOperation, Metrics};
+use spacetimedb_table::tiered::{
+    metrics::{DiskOperation, Metrics},
+    Fsync, HardlinkObject,
+};
 use spacetimedb_table::{
     blob_store::BlobHash,
     page_pool::PagePool,
@@ -54,7 +58,7 @@ impl DiskStorage {
         result.map(|(value, _)| value)
     }
 
-    fn record_operation<T>(&self, operation: DiskOperation, result: &Result<T, ObjectStoreError>) {
+    fn record_operation<T, E: fmt::Debug>(&self, operation: DiskOperation, result: &Result<T, E>) {
         self.metrics.disk_operation(operation, result.is_ok());
         let Err(error) = result else { return };
         let Some(stats) = self.metrics.collected() else { return };
@@ -166,6 +170,30 @@ unsafe impl RemoveObject for DiskStorage {
             }
         });
         self.record_operation(DiskOperation::Delete, &result);
+        result
+    }
+}
+
+impl HardlinkObject for DiskStorage {
+    fn hardlink_to(&self, key: ObjectKey, dst: &Path, fsync: Fsync) -> io::Result<()> {
+        fn link(src: &Path, dst: &Path, _fsync: Fsync) -> io::Result<()> {
+            fs::hard_link(src, dst)?;
+
+            #[cfg(not(target_os = "windows"))]
+            if let Fsync::Require = _fsync {
+                let dir = dst.parent().expect("hardlink target must have a parent");
+                fs::File::open(dir)?.sync_all()?;
+            }
+
+            Ok(())
+        }
+
+        let timer = self.metrics.timer();
+        let path = self.file_path(&key);
+        let result = link(&path, dst, fsync);
+        self.metrics.disk_io(DiskOperation::Hardlink, timer.nanos(), 0);
+        self.record_operation(DiskOperation::Hardlink, &result);
+
         result
     }
 }
