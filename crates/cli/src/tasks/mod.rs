@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use crate::util::{self, ModuleLanguage};
@@ -38,7 +39,7 @@ pub fn build(
         let mut wasm_path = output_path;
         eprintln!("Optimising module with wasm-opt...");
         let wasm_path_opt = wasm_path.with_extension("opt.wasm");
-        match cmd!("wasm-opt", "-all", "-g", "-O2", &wasm_path, "-o", &wasm_path_opt).run() {
+        match optimise_wasm(&wasm_path, &wasm_path_opt) {
             Ok(_) => wasm_path = wasm_path_opt,
             // Non-critical error for backward compatibility with users who don't have wasm-opt.
             Err(err) => {
@@ -57,6 +58,19 @@ pub fn build(
         }
         Ok((wasm_path, "Wasm"))
     }
+}
+
+fn optimise_wasm(wasm_path: &Path, wasm_path_opt: &Path) -> std::io::Result<()> {
+    let help = cmd!("wasm-opt", "--help").read()?;
+    let mut args = vec![OsStr::new("-all"), OsStr::new("-g"), OsStr::new("-O2")];
+    // Binaryen 132 added compact imports to `-all`, but our Wasm loader cannot
+    // read that encoding. Older wasm-opt versions do not recognize this flag.
+    if help.contains("--disable-compact-imports") {
+        args.push(OsStr::new("--disable-compact-imports"));
+    }
+    args.extend([wasm_path.as_os_str(), OsStr::new("-o"), wasm_path_opt.as_os_str()]);
+    cmd("wasm-opt", args).run()?;
+    Ok(())
 }
 
 pub mod cpp;
