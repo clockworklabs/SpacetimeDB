@@ -170,9 +170,15 @@ impl RawConfig {
             nickname: Some("maincloud".to_string()),
             ecdsa_public_key: None,
         };
+        let maincloud_eu = ServerConfig {
+            host: "eu.maincloud.spacetimedb.com".to_string(),
+            protocol: "https".to_string(),
+            nickname: Some("maincloud-eu".to_string()),
+            ecdsa_public_key: None,
+        };
         RawConfig {
             default_server: maincloud.nickname.clone(),
-            server_configs: vec![maincloud, local],
+            server_configs: vec![maincloud, maincloud_eu, local],
             web_session_token: None,
             spacetimedb_token: None,
             listen_addr: None,
@@ -887,6 +893,23 @@ mod tests {
     use spacetimedb_paths::FromPathUnchecked;
     use std::fs;
     use std::thread;
+
+    #[test]
+    fn test_builtin_servers() {
+        let config = RawConfig::new_with_localhost();
+
+        assert_eq!(config.default_server.as_deref(), Some("maincloud"));
+        for (nickname, host, protocol) in [
+            ("maincloud", "maincloud.spacetimedb.com", "https"),
+            ("maincloud-eu", "eu.maincloud.spacetimedb.com", "https"),
+            ("local", "127.0.0.1:3000", "http"),
+        ] {
+            let server = config.find_server(nickname).unwrap();
+            assert_eq!(server.host, host);
+            assert_eq!(server.protocol, protocol);
+            assert_eq!(config.find_server(host).unwrap().nickname.as_deref(), Some(nickname));
+        }
+    }
 
     const CONFIG_FULL: &str = r#"default_server = "local"
 web_session_token = "web_session"
