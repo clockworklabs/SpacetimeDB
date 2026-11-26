@@ -64,8 +64,9 @@ impl BlobSet {
 
     fn from_inner(inner: BlobSetInner) -> Self {
         let inner = Arc::new(inner);
-        let source: Arc<dyn EvictionSource> = inner.clone();
-        inner.resident.register_eviction_source(&source);
+        inner
+            .resident
+            .register_eviction_source(EvictionSource::Blobs(Arc::downgrade(&inner)));
 
         Self { inner }
     }
@@ -953,8 +954,8 @@ impl IntoIterator for BlobMap {
     }
 }
 
-impl EvictionSource for BlobSetInner {
-    fn evict(&self, target_usage: u64) -> Result<u64, EvictionError> {
+impl BlobSetInner {
+    pub(super) fn evict(&self, target_usage: u64) -> Result<u64, EvictionError> {
         let mut bytes_freed = 0;
 
         if self.resident.usage().accounted_bytes() <= target_usage {

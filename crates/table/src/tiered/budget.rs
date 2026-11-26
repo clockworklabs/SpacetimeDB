@@ -201,7 +201,7 @@ pub struct ByteBudgetStateView(Arc<Mutex<ByteBudgetState>>);
 
 impl ByteBudgetStateView {
     pub fn usage(&self) -> ByteBudgetUsage {
-        let accounted_bytes = self.0.lock().unwrap().accounted_bytes;
+        let accounted_bytes = self.0.lock().accounted_bytes;
         ByteBudgetUsage { accounted_bytes }
     }
 }

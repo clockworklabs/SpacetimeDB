@@ -47,6 +47,12 @@ impl From<ObjectStoreError> for PageError {
     }
 }
 
+impl From<EvictionError> for PageError {
+    fn from(error: EvictionError) -> Self {
+        Self::Eviction(Box::new(error))
+    }
+}
+
 impl PageError {
     pub fn is_transient(&self) -> bool {
         match self {

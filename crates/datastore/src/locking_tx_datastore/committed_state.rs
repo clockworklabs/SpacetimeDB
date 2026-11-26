@@ -458,12 +458,7 @@ impl CommittedState {
 
     /// Returns an iterator doing a full table scan on `table_id`.
     pub(super) fn table_scan<'a>(&'a self, table_id: TableId) -> Option<TableScanIter<'a>> {
-        Some(
-            self.get_table(table_id)?
-                .scan_rows(self.storage.blobs())
-                .with_read_eviction(self)
-                .err_into(),
-        )
+        Some(self.get_table(table_id)?.scan_rows(self.storage.blobs()).err_into())
     }
 
     /// Returns an index for `table_id` on `cols`, if any.

@@ -19,7 +19,12 @@ use crate::{
     page::Page,
     page_pool::PagePool,
     tiered::{
-        budget::ByteBudgetStateView, error::EvictionError, map::BlobHashWrapper, metrics::EvictionDirection,
+        blob_set::BlobSetInner,
+        budget::ByteBudgetStateView,
+        error::EvictionError,
+        map::BlobHashWrapper,
+        metrics::EvictionDirection,
+        page_manager::{PageEviction, WeakPageSlotHandle},
         BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetUsage,
     },
 };
@@ -171,7 +176,7 @@ pub struct ResidentObjects {
     budget: ByteBudget,
     access_epoch: AtomicU64,
     page_id: AtomicU64,
-    pages: Mutex<IntMap<PageId, Weak<PageFrame>>>,
+    pages: Mutex<IntMap<PageId, RegisteredPage>>,
     blobs: Mutex<IntMap<BlobHashWrapper, Weak<BlobFrame>>>,
     eviction: Arc<Eviction>,
 }
@@ -307,23 +312,33 @@ impl ResidentObjects {
         Ok(self.reserve_page_with_permit(permit, page))
     }
 
-    pub(super) fn redeem_page(&self, ReservedPage { id, frame }: ReservedPage) -> Arc<PageFrame> {
+    pub(super) fn redeem_page(
+        &self,
+        ReservedPage { id, frame }: ReservedPage,
+        slot: WeakPageSlotHandle,
+    ) -> Arc<PageFrame> {
         let frame = Arc::new(frame);
-        assert!(self.pages.lock().insert(id, Arc::downgrade(&frame)).is_none());
+        let entry = RegisteredPage {
+            frame: Arc::downgrade(&frame),
+            slot,
+        };
+        assert!(self.pages.lock().insert(id, entry).is_none());
+
         frame
     }
 
     pub(super) fn evictable_pages(&self, candidates: &mut Vec<PageEvictionCandidate>) {
         {
             let mut pages = self.pages.lock();
-            pages.retain(|&id, weak| {
-                let Some(frame) = weak.upgrade() else {
+            pages.retain(|&id, entry| {
+                let Some(frame) = entry.frame.upgrade() else {
                     return false;
                 };
 
                 if Arc::strong_count(&frame) <= 2 {
                     candidates.push(PageEvictionCandidate {
                         id,
+                        slot: entry.slot.clone(),
                         access: frame.access(),
                     });
                 }
@@ -338,7 +353,7 @@ impl ResidentObjects {
     pub(super) fn evict_page(&self, victim: PageEvictionCandidate) {
         let mut pages = self.pages.lock();
         if let hash_map::Entry::Occupied(entry) = pages.entry(victim.id)
-            && entry.get().strong_count() == 0
+            && entry.get().frame.strong_count() == 0
         {
             entry.remove();
         }
@@ -352,10 +367,15 @@ impl ResidentObjects {
         self.budget.usage()
     }
 
-    pub(super) fn register_page_unchecked(&self, pool: PagePool, page: Box<Page>) -> Arc<PageFrame> {
+    pub(super) fn register_page_unchecked(
+        &self,
+        pool: PagePool,
+        page: Box<Page>,
+        slot: WeakPageSlotHandle,
+    ) -> Arc<PageFrame> {
         let permit = self.restored_page_permit();
         let reservation = self.reserve_page_with_permit(permit, PooledPage::new(page, pool));
-        self.redeem_page(reservation)
+        self.redeem_page(reservation, slot)
     }
 
     pub(super) fn detach_page(&self, frame: Arc<PageFrame>) -> (Box<Page>, BudgetPermit) {
@@ -409,7 +429,7 @@ impl ResidentObjects {
         result
     }
 
-    pub(super) fn register_eviction_source(&self, source: &Arc<dyn EvictionSource>) {
+    pub(super) fn register_eviction_source(&self, source: EvictionSource) {
         self.eviction.register(source);
     }
 }
@@ -437,8 +457,15 @@ pub struct BlobEvictionCandidate {
 }
 
 #[derive(Debug)]
+struct RegisteredPage {
+    frame: Weak<PageFrame>,
+    slot: WeakPageSlotHandle,
+}
+
+#[derive(Debug)]
 pub struct PageEvictionCandidate {
     pub id: PageId,
+    pub(super) slot: WeakPageSlotHandle,
     access: AccessSnapshot,
 }
 
@@ -565,27 +592,52 @@ impl fmt::Debug for PooledPage {
     }
 }
 
-pub(super) trait EvictionSource: fmt::Debug + Send + Sync {
-    fn evict(&self, target: u64) -> Result<u64, EvictionError>;
+/// [Eviction] coordinates eviction across eviction sources.
+///
+/// Each page and blob set is registered with [Eviction] as a source. Eviction
+/// sources are [Weak] references, so de-registration is not necessary (e.g. on
+/// transaction commit / abort).
+#[derive(Clone, Debug)]
+pub(super) enum EvictionSource {
+    Pages(Weak<PageEviction>),
+    Blobs(Weak<BlobSetInner>),
+}
+
+impl EvictionSource {
+    fn is_alive(&self) -> bool {
+        match self {
+            Self::Pages(source) => source.strong_count() > 0,
+            Self::Blobs(source) => source.strong_count() > 0,
+        }
+    }
+
+    fn evict(&self, target: u64) -> Result<u64, EvictionError> {
+        // Upgrade outside the registry lock. A source dropped since discovery
+        // has no remaining catalog for the coordinator to evict.
+        match self {
+            Self::Pages(source) => source.upgrade().map_or(Ok(0), |source| source.evict(target)),
+            Self::Blobs(source) => source.upgrade().map_or(Ok(0), |source| source.evict(target)),
+        }
+    }
 }
 
 #[derive(Debug)]
 struct Eviction {
     usage: ByteBudgetStateView,
-    sources: Mutex<Vec<Weak<dyn EvictionSource>>>,
+    sources: Mutex<Vec<EvictionSource>>,
 }
 
 impl Eviction {
-    fn register(&self, source: &Arc<dyn EvictionSource>) {
-        self.sources.lock().push(Arc::downgrade(source))
+    fn register(&self, source: EvictionSource) {
+        self.sources.lock().push(source)
     }
 
     fn evict(&self, target: u64) -> Result<u64, EvictionError> {
         let mut bytes_freed = 0;
         let sources = {
             let mut sources = self.sources.lock();
-            sources.retain(|s| s.strong_count() > 0);
-            sources.iter().filter_map(Weak::upgrade).collect::<Vec<_>>()
+            sources.retain(EvictionSource::is_alive);
+            sources.clone()
         };
 
         for source in sources {
@@ -604,6 +656,6 @@ impl MemoryUsage for Eviction {
     fn heap_usage(&self) -> usize {
         // Don't count the budget, as it is already accounted for by
         // [ResidentObjects].
-        self.sources.lock().capacity() + size_of::<Weak<dyn EvictionSource>>()
+        self.sources.lock().capacity() * size_of::<EvictionSource>()
     }
 }
