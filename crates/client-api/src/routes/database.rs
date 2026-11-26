@@ -1343,12 +1343,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         if let Ok(identity) = database_identity {
             let database = ctx.get_database_by_identity(&identity).await.map_err(log_and_500)?;
             if let Some(database) = database {
-                if parent.is_some() {
-                    return Err(bad_request(
-                        "Setting the parent of an existing database is not supported".into(),
-                    ));
-                }
-
                 return self::reset(
                     State(ctx),
                     Extension(ResolvedDatabase(database)),
@@ -2507,6 +2501,7 @@ mod tests {
         dns_lookups: std::sync::Arc<AtomicUsize>,
         reject_publication: bool,
         name_registrations: std::sync::Arc<AtomicUsize>,
+        reset_calls: std::sync::Arc<AtomicUsize>,
         allow_publish_update: bool,
     }
 
@@ -2524,6 +2519,7 @@ mod tests {
                 dns_lookups: std::sync::Arc::new(AtomicUsize::new(0)),
                 reject_publication: false,
                 name_registrations: std::sync::Arc::new(AtomicUsize::new(0)),
+                reset_calls: std::sync::Arc::new(AtomicUsize::new(0)),
                 allow_publish_update: false,
             }
         }
@@ -2617,6 +2613,40 @@ mod tests {
                 ));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn publish_clear_ignores_parent_for_existing_database() {
+        let identity = test_identity(43);
+        let mut state = DummyState::new().with_database(identity);
+        state.allow_publish_update = true;
+        let reset_calls = state.reset_calls.clone();
+        let app = DatabaseRoutes::<DummyState>::default()
+            .into_router(state.clone())
+            .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::PUT)
+                    .uri(format!("/{identity}?clear=true&parent=existing-parent"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(reset_calls.load(Ordering::Relaxed), 1);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(matches!(
+            serde_json::from_slice::<PublishResult>(&body).unwrap(),
+            PublishResult::Success {
+                database_identity,
+                op: PublishOp::Updated,
+                ..
+            } if database_identity == identity
+        ));
     }
 
     fn http_response_size_metric(database_identity: Identity) -> u64 {
@@ -2804,7 +2834,8 @@ mod tests {
             _spec: DatabaseResetDef,
             _environment: EnvironmentMap,
         ) -> anyhow::Result<()> {
-            Err(anyhow::anyhow!("unused"))
+            self.reset_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
         }
 
         async fn add_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -2865,7 +2896,7 @@ mod tests {
                 });
             }
             if self.allow_publish_update
-                && matches!(action, Action::UpdateDatabase)
+                && matches!(action, Action::UpdateDatabase | Action::ResetDatabase)
                 && self.databases.contains_key(&database)
             {
                 return Ok(());
