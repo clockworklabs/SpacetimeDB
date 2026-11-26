@@ -8,6 +8,7 @@ pub mod dev;
 pub mod dns;
 pub mod env;
 pub mod generate;
+pub mod inc;
 pub mod init;
 pub mod list;
 pub mod lock;
