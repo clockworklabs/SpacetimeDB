@@ -21,10 +21,11 @@ type Primitive = string | number | boolean | bigint | symbol | null | undefined;
  * Primitives pass through unchanged. A branded primitive (`string & Brand`)
  * is an object type, but mapping it yields a structural record of `String`'s
  * members that no longer satisfies `string`. The outer `object` check keeps a
- * generic `Prettify<T>` spreadable.
+ * generic `Prettify<T>` spreadable. It tests an inferred copy of `T`: testing
+ * `T` itself resolves a branded primitive to `never`.
  */
-export type Prettify<T> = T extends object
-  ? T extends DoNotPrettify | Primitive
+export type Prettify<T> = T extends infer O extends object
+  ? O extends DoNotPrettify | Primitive
     ? T
     : { [K in keyof T]: T[K] } & {}
   : T;
