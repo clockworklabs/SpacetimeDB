@@ -6,6 +6,14 @@ import {
   tables,
 } from './module_bindings/index.js';
 
+// `spacetime init` and `spacetime dev` write the connection settings to
+// `.env.local`. Variables already set in the environment take precedence.
+try {
+  process.loadEnvFile?.('.env.local');
+} catch {
+  // No `.env.local`: fall back to the defaults below.
+}
+
 const HOST = process.env.SPACETIMEDB_HOST ?? 'ws://localhost:3000';
 const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'basic-ts';
 
