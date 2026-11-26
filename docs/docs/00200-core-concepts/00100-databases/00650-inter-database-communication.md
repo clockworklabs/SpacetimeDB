@@ -390,7 +390,12 @@ spacetime sql lobby "SELECT * FROM admit_player_outbox"
 
 ### Generated outbox declarations
 
-You can always declare an outbox by manually specifying the table and types. TypeScript and Rust receiver bindings also provide shorthand declarations. In TypeScript, `gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column, a `target` column, and a column for each parameter of the reducer:
+You can always declare an outbox by manually specifying the table and types. However, the receiver bindings can also declare an outbox for you, with a message ID column, a target column, and a column for each parameter of the reducer:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+`gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column and a `target` column:
 
 ```typescript
 const spacetimedb = schema({
@@ -404,17 +409,37 @@ ctx.db.admitPlayerOutbox.insert({ msgId: 0n, target: world, name });
 
 Like `table()`, it takes an optional `name`. Without one, the table is named after its key in `schema()`. It can't declare an outbox for a reducer with a parameter named `msgId` or `target`. For that reducer, use `table()` to manually declare an outbox table, and give the message ID and target columns other names.
 
-In Rust, import the receiving module and use `spacetimedb::outbox!`:
+</TabItem>
+<TabItem value="csharp" label="C#">
 
-```rust
-use remote_bindings::game_world;
+Put `[Outbox]` on an empty `partial struct`, in place of `[Table]`, and pass it the reducer from the bindings. It declares the struct as an outbox table with a `MsgId` message ID column, a `Target` column, and a column for each parameter, named in Pascal case:
 
-spacetimedb::outbox!(game_world::admit_player);
+```csharp
+[Outbox(typeof(Gw.Reducers.AdmitPlayer), Accessor = "AdmitPlayerOutbox")]
+public partial struct AdmitPlayerOutbox { }
+
+// Inside a reducer:
+ctx.Db.AdmitPlayerOutbox.Insert(new AdmitPlayerOutbox { MsgId = 0, Target = world, Name = name });
 ```
 
-For the `admit_player(name: String)` reducer above, this creates `AdmitPlayerOutbox` with `msg_id: u64`, `target: game_world::Identity`, and `name: String`, accessed through `ctx.db.admit_player_outbox()`. Insert `msg_id: 0` to allocate the message ID. Optional `accessor = custom_outbox` and `name = "custom_outbox"` arguments override the accessor and canonical table name. The receiver must be in scope as a module identifier. If its arguments include `msg_id` or `target`, or you need multiple outboxes for the same reducer or extra columns, declare the table manually instead.
+Like `[Table]`, it takes an `Accessor`, and optionally a `Name` and `Public`. It can't declare an outbox for a reducer with a parameter named `msg_id` or `target`. For that reducer, use `[Table]` to manually declare an outbox table, and give the message ID and target columns other names.
 
-Rust receiver bindings now use `mod.rs` as their root. Regenerate older bindings and remove any obsolete `#[path = "remote_bindings/game_world/lib.rs"]` override; the normal `mod remote_bindings;` declaration works with the generated directory structure.
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+`outbox!(game_world::admit_player)` declares an `admit_player_outbox` table, with an `AdmitPlayerOutbox` row type, a `msg_id` message ID column and a `target` column:
+
+```rust
+spacetimedb::outbox!(game_world::admit_player);
+
+// Inside a reducer:
+ctx.db.admit_player_outbox().insert(AdmitPlayerOutbox { msg_id: 0, target: world, name });
+```
+
+Pass `accessor = ...` or `name = "..."` to name the table differently. It can't declare an outbox for a reducer with a parameter named `msg_id` or `target`, or a second outbox for the same reducer. For those, use `#[table]` to manually declare an outbox table, and give the message ID and target columns other names.
+
+</TabItem>
+</Tabs>
 
 ## Receiving calls
 
@@ -565,3 +590,9 @@ To change a reducer without failing calls from databases that haven't regenerate
 - See [Receiver dependencies](../../00300-resources/00100-cli-reference/00300-spacetime-json.md#receiver-dependencies) for every way to configure receiver bindings in `spacetime.json`.
 - Learn how [transactions](./00100-transactions-atomicity.md) make each reducer's changes, including its outbox rows, all-or-nothing.
 - Use a [schedule table](../00300-tables/00500-schedule-tables.md) to call a reducer in the same database at a later time.
+
+### Rust generated-binding details
+
+For the `admit_player(name: String)` reducer above, this creates `AdmitPlayerOutbox` with `msg_id: u64`, `target: game_world::Identity`, and `name: String`, accessed through `ctx.db.admit_player_outbox()`. Insert `msg_id: 0` to allocate the message ID. Optional `accessor = custom_outbox` and `name = "custom_outbox"` arguments override the accessor and canonical table name. The receiver must be in scope as a module identifier. If its arguments include `msg_id` or `target`, or you need multiple outboxes for the same reducer or extra columns, declare the table manually instead.
+
+Rust receiver bindings now use `mod.rs` as their root. Regenerate older bindings and remove any obsolete `#[path = "remote_bindings/game_world/lib.rs"]` override; the normal `mod remote_bindings;` declaration works with the generated directory structure.
