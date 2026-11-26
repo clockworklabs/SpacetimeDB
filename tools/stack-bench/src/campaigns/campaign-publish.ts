@@ -36,12 +36,15 @@ export function createCampaignUpload(directory: string, suite: string,
   ) {
     throw new Error('publish requires a frozen dependency campaign');
   }
-  // A campaign that stopped for attention may hold attempts that never started; they have no
-  // evidence to upload. Every attempt that started must have finished.
+  // No controller holds the campaign (checked above), so it has stopped. A stopped campaign may
+  // hold attempts that never started, because it stopped for attention or because its job was
+  // cancelled; they have no evidence to upload. Every attempt that started must have finished,
+  // and a campaign that only stopped before running must have finished at least one.
   const neverStarted = (attempt: { status: string; executions: readonly unknown[] }) =>
-    state.status === 'attention-required' && attempt.status === 'pending' && !attempt.executions.length;
+    state.status !== 'completed' && attempt.status === 'pending' && !attempt.executions.length;
   if (
-    !['completed', 'attention-required'].includes(state.status) ||
+    !['completed', 'attention-required', 'prepared'].includes(state.status) ||
+    (state.status === 'prepared' && !state.attempts.some(attempt => attempt.status === 'completed')) ||
     state.attempts.some(
       attempt => !neverStarted(attempt) && (
         !['completed', 'invalid'].includes(attempt.status) ||

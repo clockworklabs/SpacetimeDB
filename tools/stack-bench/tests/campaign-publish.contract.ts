@@ -264,6 +264,11 @@ test('retained dependency evidence exports through the CLI and sends only valida
     { exitCode: 0, run: artifactPayload(run) },
     { now }
   );
+  // A stopped campaign with one finished attempt and one that never started, as when its job is
+  // cancelled, passes the finished-campaign rule and reaches the report requirement.
+  writeCampaignState(join(campaign, 'state.json'), plan, state);
+  assert.equal(state.status, 'prepared');
+  assert.throws(() => createCampaignUpload(campaign, 'fixture-suite'), /report/);
   const invalid = claimNextAttempt(state, { now, admissionId: 'fixture' });
   assert.ok(invalid.claim);
   state = finishCampaignExecution(
