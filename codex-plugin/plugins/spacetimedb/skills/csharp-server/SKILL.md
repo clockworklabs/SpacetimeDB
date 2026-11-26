@@ -143,7 +143,7 @@ The complete set of column attributes:
 [PrimaryKey]          // primary key
 [AutoInc]             // auto-increment (use 0 as placeholder on insert)
 [Unique]              // unique constraint; indexes the column, enables .Find()
-[SpacetimeDB.Index.BTree]  // btree index (enables .Filter() on this column)
+[SpacetimeDB.Index.BTree]  // non-unique btree index enables .Filter()
 [Default(true)]       // migration-safe default for a newly appended field
 ```
 
@@ -166,6 +166,8 @@ public partial struct Membership { public ulong GroupId; public Identity UserId;
 ```
 
 Prefer a multi-column index over filtering by one column and looping.
+
+A declared single-column B-tree index on a `[Unique]` or `[PrimaryKey]` column is that column's unique index, not a second non-unique index. Its declared `Accessor` is the only accessor and supports `Find`/`Update`/`Delete`, not `Filter`. For example, declaring `Accessor = "ById"` on the `Id` primary-key column changes calls from `.Id.Find(id)` to `.ById.Find(id)`. Remove the redundant index attribute to retain the column-named accessor. Do not change an unconstrained column's `Filter` calls to `Find`.
 
 ## Reducers
 
@@ -212,7 +214,7 @@ public static void ClientConnected(ReducerContext ctx) { ... }
 public static void ClientDisconnected(ReducerContext ctx) { ... }
 ```
 
-Reducer and procedure method names must not start with `On`, `on`, or `__`; the code generator rejects them (STDB0010), so name lifecycle reducers `ClientConnected`, not `OnConnect`.
+Ordinary reducer and procedure method names must not start with `On`, `on`, or `__`; the code generator rejects them (STDB0010), so name lifecycle reducers `ClientConnected`, not `OnConnect`. A reducer marked `[OnResult]` may start with `On` or `on`, but not `__`.
 
 `ctx.ConnectionId` is `ConnectionId?`, including in connection lifecycle reducers. Check or unwrap it before storing it in a non-nullable column or passing it to an index accessor.
 
@@ -308,6 +310,16 @@ The marker is any accessible type in the dependency assembly. Root code uses `ct
 `Accessor` controls C# members; `Name` pins the canonical namespace used in SQL (`auth_data.<table>`). Without `Name`, the root's case policy derives it (`MyAuth` → `my_auth` by default). Changing the canonical namespace drops its tables and their data; keep `Name` fixed to rename only accessors. Named dependencies retain their naming policy; `public` dependencies inherit the root's and cannot explicitly conflict with it.
 
 In 2.14+, any module can mount its own dependencies, and the same assembly can be mounted more than once with independent tables at each path; 2.13 allows only root mounts, once per assembly. Cross-language composition is unsupported. Named dependencies cannot declare lifecycle reducers, nonempty environments, or RLS filters. Define RLS in the root with canonical qualified table names. Named-submodule routes are ignored; root handlers may delegate to library helpers. Dependencies in `public` can contribute lifecycle reducers (subject to uniqueness), environment declarations, and routes.
+
+## Inter-Database Communication
+
+Generate C# receiver bindings with `spacetime generate --bindings module --lang csharp`, or use the sending module's `dependencies` in `spacetime.json` (see the CLI skill). For a dependency named `game_world`, the default namespace is `RemoteBindings.GameWorld`; import it as `using Gw = RemoteBindings.GameWorld;`. This is independent-database messaging, not assembly composition.
+
+For a receiver reducer `admit_player(name: string)`, `[Outbox(typeof(Gw.Reducers.AdmitPlayer), Accessor = "AdmitPlayerOutbox")]` on an empty `public partial struct AdmitPlayerOutbox` generates `MsgId`, `Target` (a `Gw.Identity`), and `Name`. Insert through `ctx.Db.AdmitPlayerOutbox.Insert(...)` inside a reducer, with `MsgId = 0` for automatic allocation. Use the generated receiver identity type, not an unwrapped `SpacetimeDB.Identity`.
+
+Alternatively, declare `[Table(Accessor = "AdmitPlayerOutbox", Outbox = typeof(Gw.Reducers.AdmitPlayer))]` with a `ulong` `[PrimaryKey, AutoInc]` field, exactly one `[Target]` field of type `Gw.Identity`, and matching parameter fields. Field names map to receiver parameters in snake_case; `[Param("name")]` maps a differently named field to the canonical `name` parameter. Additional fields are local callback metadata. Use the manual form if receiver parameters collide with shorthand's `msg_id` or `target`. Outboxes must be in the root assembly, not a referenced library; they cannot also be event or scheduled tables.
+
+Apply both `[Reducer]` and `[OnResult(typeof(AdmitPlayerOutbox))]` to a `public static void` method with parameters `(ReducerContext ctx, AdmitPlayerOutbox row, Result<Unit, string> result)`. Match errors as `Result<Unit, string>.ErrR(var error)`. If a row type has several outboxes, select one with `Table = "AccessorName"` on `[OnResult]`; `[Target]` and `[Param]` also accept `Table`. The callback is private: only the host, database owner, and team collaborators can run it, not ordinary clients. See the concepts skill for delivery/transaction guarantees and `/databases/inter-database-communication` for the complete receiver, sender, and callback example.
 
 ## Environment Variables
 
@@ -437,6 +449,8 @@ public enum Status { Online, Away, Offline }
 [SpacetimeDB.Type]
 public partial struct Point { public float X; public float Y; }
 ```
+
+`[SpacetimeDB.Type(Name = "game_world.Point")]` overrides a custom type's canonical schema name without renaming the C# type. The runtime accepts `.` or `::` between scope segments. C# receiver bindings use dependency-scoped type names to keep types from different receivers distinct; preserve their generated `Type(Name = ...)` attributes rather than editing generated files.
 
 Tagged enums (discriminated unions): a `partial record` with empty body and no constructor parameters. Payloads are `[Type] partial struct`s:
 

@@ -177,7 +177,9 @@ Reducers can't make network requests, but a reducer can call a reducer in anothe
 
 Deliveries can be pipelined. Receiving calls and `on_result` callbacks each retain stream order, but a later receiving call need not wait for an earlier callback in the sending database. Do not use callbacks as barriers for subsequent receiving calls.
 
-Use it to split an application into databases that scale and deploy independently, such as a lobby that sends players to separate game world databases. Only Rust and TypeScript modules can declare outbox tables. See the language-specific server skills for syntax.
+Outbox rows are insert-only for module code. The host removes them after delivery and the optional result callback; do not update or delete pending rows yourself.
+
+Use it to split an application into databases that scale and deploy independently, such as a lobby that sends players to separate game world databases. Rust, TypeScript, and C# modules can declare outbox tables. See the language-specific server skills for syntax.
 
 ## Identity
 

@@ -64,7 +64,7 @@ In the `game_world` module, write `admit_player` as an ordinary reducer. It may 
 // game_world/src/index.ts
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
-const MAX_PLAYERS = 2n;
+const maxPlayers = 2n;
 
 const player = table({ public: true }, { name: t.string().primaryKey() });
 
@@ -74,7 +74,7 @@ export default spacetimedb;
 export const admitPlayer = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    if (ctx.db.player.count() >= MAX_PLAYERS) {
+    if (ctx.db.player.count() >= maxPlayers) {
       throw new SenderError('The world is full');
     }
     ctx.db.player.insert({ name });
@@ -578,7 +578,9 @@ spacetimedb::outbox!(game_world::admit_player);
 ctx.db.admit_player_outbox().insert(AdmitPlayerOutbox { msg_id: 0, target: world, name });
 ```
 
-Pass `accessor = ...` or `name = "..."` to name the table differently. It can't declare an outbox for a reducer with a parameter named `msg_id` or `target`, or a second outbox for the same reducer. For those, use `#[table]` to manually declare an outbox table, and give the message ID and target columns other names.
+For the `admit_player(name: String)` reducer above, this creates `AdmitPlayerOutbox` with `msg_id: u64`, `target: game_world::Identity`, and `name: String`, accessed through `ctx.db.admit_player_outbox()`. Insert `msg_id: 0` to allocate the message ID. Optional `accessor = custom_outbox` and `name = "custom_outbox"` arguments override the accessor and canonical table name. The receiver must be in scope as a module identifier. If its arguments include `msg_id` or `target`, or you need multiple outboxes for the same reducer or extra columns, declare the table manually instead.
+
+Rust receiver bindings now use `mod.rs` as their root. Regenerate older bindings and remove any obsolete `#[path = "remote_bindings/game_world/lib.rs"]` override; the normal `mod remote_bindings;` declaration works with the generated directory structure.
 
 </TabItem>
 </Tabs>
@@ -812,9 +814,3 @@ To change a reducer without failing calls from databases that haven't regenerate
 - See [Receiver dependencies](../../00300-resources/00100-cli-reference/00300-spacetime-json.md#receiver-dependencies) for every way to configure receiver bindings in `spacetime.json`.
 - Learn how [transactions](./00100-transactions-atomicity.md) make each reducer's changes, including its outbox rows, all-or-nothing.
 - Use a [schedule table](../00300-tables/00500-schedule-tables.md) to call a reducer in the same database at a later time.
-
-### Rust generated-binding details
-
-For the `admit_player(name: String)` reducer above, this creates `AdmitPlayerOutbox` with `msg_id: u64`, `target: game_world::Identity`, and `name: String`, accessed through `ctx.db.admit_player_outbox()`. Insert `msg_id: 0` to allocate the message ID. Optional `accessor = custom_outbox` and `name = "custom_outbox"` arguments override the accessor and canonical table name. The receiver must be in scope as a module identifier. If its arguments include `msg_id` or `target`, or you need multiple outboxes for the same reducer or extra columns, declare the table manually instead.
-
-Rust receiver bindings now use `mod.rs` as their root. Regenerate older bindings and remove any obsolete `#[path = "remote_bindings/game_world/lib.rs"]` override; the normal `mod remote_bindings;` declaration works with the generated directory structure.

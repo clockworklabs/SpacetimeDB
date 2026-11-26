@@ -272,6 +272,8 @@ Full documentation is available at **[spacetimedb.com/docs](https://spacetimedb.
 
 SpacetimeDB is licensed under the [Business Source License 1.1 (BSL)](LICENSE.txt). It converts to the AGPL v3.0 with a linking exception after a few years. The linking exception means you are **not** required to open-source your own code if you use SpacetimeDB. You only need to contribute back changes to SpacetimeDB itself.
 
+The [Rust client SDK](sdks/rust/LICENSE) and the [TypeScript client SDK and module library](crates/bindings-typescript/LICENSE.txt) are licensed under [Apache 2.0](licenses/apache2.txt), rather than the server's BSL. Check each component's license file for its terms.
+
 **Why did we choose this license?**
 We chose to license SpacetimeDB under the MariaDB Business Source License for 4 years because we can't compete with AWS while also building our products for them.
 
