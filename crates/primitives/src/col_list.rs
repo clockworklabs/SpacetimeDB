@@ -309,11 +309,9 @@ impl Clone for ColList {
 impl Eq for ColList {}
 impl PartialEq for ColList {
     fn eq(&self, other: &Self) -> bool {
-        match (self.as_inline(), other.as_inline()) {
-            (Ok(lhs), Ok(rhs)) => lhs == rhs,
-            (Err(lhs), Err(rhs)) => ***lhs == ***rhs,
-            _ => false,
-        }
+        // Compare contents, not storage: a heap list can hold columns that would
+        // otherwise be stored inline, and `Ord` already compares by contents.
+        self.iter().eq(other.iter())
     }
 }
 
@@ -330,9 +328,11 @@ impl PartialOrd for ColList {
 
 impl Hash for ColList {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match self.as_inline() {
-            Ok(inline) => inline.0.hash(state),
-            Err(heap) => heap.hash(state),
+        // Hash the columns, not the storage representation, so that equal lists
+        // hash equally even when one is inline and the other is heap allocated.
+        state.write_u16(self.len());
+        for col in self.iter() {
+            col.hash(state);
         }
     }
 }
@@ -740,6 +740,36 @@ mod tests {
 
     fn contains(list: &ColList, x: &ColId) -> bool {
         list.iter().any(|y| y == *x)
+    }
+
+    #[test]
+    fn test_eq_ord_hash_ignore_storage_representation() {
+        use std::collections::hash_map::DefaultHasher;
+
+        // A short sorted list collected from an array is stored inline.
+        let inline: ColList = [ColId(0), ColId(1), ColId(2)].into();
+        assert!(inline.is_inline());
+
+        // The same columns pushed into a pre-reserved list are stored on the heap.
+        let mut heap = ColList::with_capacity(ColList::FIRST_HEAP_COL_U16);
+        for col in 0..3u16 {
+            heap.push(ColId(col));
+        }
+        assert!(!heap.is_inline());
+
+        assert_eq!(inline.iter().collect::<Vec<_>>(), heap.iter().collect::<Vec<_>>());
+        assert_eq!(inline.cmp(&heap), Ordering::Equal);
+
+        // Eq, Ord and Hash must agree regardless of how the columns are stored.
+        assert_eq!(inline, heap);
+        assert_eq!(heap, inline);
+
+        let hash = |list: &ColList| {
+            let mut hasher = DefaultHasher::new();
+            list.hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(hash(&inline), hash(&heap));
     }
 
     proptest! {
