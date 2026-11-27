@@ -157,20 +157,31 @@ test('shell writes and heredoc bodies are not reads, and every reader around the
   assert.deepEqual(pathsFromBash('cat < /x/in.md; cat <<< "/not/a/file"'), ['/x/in.md']);
 });
 
+test('quoted text opens no heredoc, and a continued line is part of its command', () => {
+  const grader = '/tools/stack-bench/grader/grade.ts';
+  assert.deepEqual(pathsFromBash(`cat \\\n  ${grader}`), [grader]);
+  assert.deepEqual(pathsFromBash(`grep -n key \\\n  /x/a.json \\\n  ${grader}`), ['/x/a.json', grader]);
+  assert.deepEqual(pathsFromBash(`node -e 'console.log("<<END")'\ncat ${grader}`), [grader]);
+  assert.deepEqual(pathsFromBash(`python3 -c "\nprint('<<EOF')\n"\ncat ${grader}`), [grader]);
+  assert.deepEqual(pathsFromBash(`echo "a \\" <<EOF"\ncat ${grader}`), [grader]);
+  assert.deepEqual(pathsFromBash(`cat <<EOF > /tmp/o.txt\ncat /x/body.md\nEOF\ncat ${grader}`), [grader]);
+});
+
 test('only StackBench\'s own mutation-test files count as grader files', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-names-'));
   const transcript = join(root, 'session.jsonl');
   const scratch = '/home/developer/.gemini/antigravity-cli/brain/session/scratch';
   const reads = [`${scratch}/verify_convex_mutations.mjs`, '/tmp/copy/progression.mutation.ts',
     '/tmp/copy/commands/check-mutations.ts', '/tmp/copy/grader/mutations/convex-ecommerce.json',
-    '/tmp/copy/grader/mutation-test.ts'];
+    '/tmp/copy/grader/mutation-test.ts', '/tmp/copy/mutation-shards.js', '/tmp/copy/mutation-manifests.test.ts',
+    '/tmp/copy/mutation-preflight.test.ts', '/tmp/copy/mutation-analysis.contract.ts'];
   try {
     const events = [{ cwd: '/app', message: { content: [{ type: 'tool_use', id: 'read-1', name: 'Bash',
       input: { command: `cat ${reads.join(' ')}` } }] } },
     { message: { content: [{ type: 'tool_result', tool_use_id: 'read-1', is_error: false }] } }];
     writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
     assert.deepEqual(auditTranscript(transcript, '/app').hits.map(hit => hit.kind),
-      ['other', 'GRADER / TEST SPECS', 'GRADER / TEST SPECS', 'GRADER / TEST SPECS', 'GRADER / TEST SPECS']);
+      ['other', ...reads.slice(1).map(() => 'GRADER / TEST SPECS')]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

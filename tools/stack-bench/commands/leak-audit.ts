@@ -73,7 +73,7 @@ const CLASSES: Array<readonly [RegExp, string]> = [
   [/\.claude[/\\]projects.*memory|[/\\]memory[/\\].*\.md$/, 'BENCHMARK NOTES'],
   // A copy of StackBench's files keeps their repository layout and names. Generic names such as
   // "mutation" (a Convex function kind), lint.js, or a prompts folder belong to ordinary apps too.
-  [/tracks[/\\][\w-]+[/\\]scenarios[/\\]|grader[/\\](?:grade\.[jt]s$|mutation-test\.[jt]s$|mutations[/\\])|(?:\.mutation|mutation-(?:analysis|checkpoint|control))\.[jt]s$|check-(?:mutations|scenarios)\.[jt]s$/, 'GRADER / TEST SPECS'],
+  [/tracks[/\\][\w-]+[/\\]scenarios[/\\]|grader[/\\](?:grade\.[jt]s$|mutation-test\.[jt]s$|mutations[/\\])|(?:\.mutation|mutation-(?:analysis|checkpoint|control|manifests|preflight|shards)(?:\.test|\.contract)?)\.[jt]s$|check-(?:mutations|scenarios)\.[jt]s$/, 'GRADER / TEST SPECS'],
   [/tracks[/\\][\w-]+[/\\](?:contracts[/\\]|walk\.[jt]s$)|linter[/\\]lint\.[jt]s$/, 'CONTRACT / LINTER'],
   [/tracks[/\\][\w-]+[/\\]prompts[/\\]/, 'PROMPTS / RUBRIC'],
   [/[/\\]skills[/\\]/, 'skill docs (intended)'],
@@ -148,18 +148,55 @@ function sessionCwd(lines: string[]): string | null {
 }
 
 // A heredoc body is the content of a file or of a command's input, not shell to run.
+// Reads the command's lines as the shell does: quoted text opens no heredoc, a `\` at the end of
+// a line continues the command, and each heredoc body after the line that opened it is dropped.
 function withoutHeredocBodies(command: string): string {
   const kept: string[] = [];
-  const open: Array<{ word: string; tabs: boolean }> = [];
+  const bodies: Array<{ word: string; tabs: boolean }> = [];
+  let opened: typeof bodies = [];
+  let quote: "'" | '"' | null = null;
+  let current = '';
   for (const line of command.split('\n')) {
-    const body = open[0];
+    const body = bodies[0];
     if (body) {
-      if ((body.tabs ? line.replace(/^\t+/, '') : line) === body.word) open.shift();
+      if ((body.tabs ? line.replace(/^\t+/, '') : line) === body.word) bodies.shift();
       continue;
     }
-    kept.push(line);
-    for (const match of line.matchAll(HEREDOC)) open.push({ word: match[3]!, tabs: match[1] === '-' });
+    let continued = false;
+    for (let index = 0; index < line.length; index++) {
+      const char = line[index]!;
+      if (quote === "'") {
+        if (char === "'") quote = null;
+      } else if (char === '\\') {
+        if (index === line.length - 1) continued = true;
+        index++;
+      } else if (quote === '"') {
+        if (char === '"') quote = null;
+      } else if (char === "'" || char === '"') {
+        quote = char;
+      } else if (char === '<') {
+        HEREDOC.lastIndex = index;
+        const match = HEREDOC.exec(line);
+        if (match?.index === index) {
+          opened.push({ word: match[3]!, tabs: match[1] === '-' });
+          index += match[0].length - 1;
+        }
+      }
+    }
+    if (continued && quote !== "'") {
+      current += `${line.slice(0, -1)} `;
+      continue;
+    }
+    if (quote) {
+      current += `${line}\n`;
+      continue;
+    }
+    kept.push(current + line);
+    current = '';
+    bodies.push(...opened);
+    opened = [];
   }
+  if (current) kept.push(current);
   return kept.join('\n');
 }
 
