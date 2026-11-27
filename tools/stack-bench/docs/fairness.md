@@ -8,7 +8,8 @@ records where the stacks are treated differently, and why.
 - One feature list and one set of checks. Prompts differ only in each stack's
   setup and interface details.
 - The same time limit and cost cap for every run in a study.
-- Seeded bugs: each stack's reference app has a seeded bug for every L3 check.
+- Seeded bugs: for each stack, every L3 check must catch one before the checks
+  count as qualified.
 - The same network rules. Coding sessions cannot reach GitHub, where the checks
   are public. Grading cannot reach anything outside the attempt.
 
