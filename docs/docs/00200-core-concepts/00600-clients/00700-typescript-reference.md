@@ -152,6 +152,8 @@ class DbConnectionBuilder {
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote database.
 
+The SDK preserves a path prefix, with or without a trailing slash. For example, `wss://example.com/stdb` connects to `/stdb/v1/database/<database>/subscribe` and exchanges authentication tokens at `https://example.com/stdb/v1/identity/websocket-token`. Configure your reverse proxy to forward both endpoints to SpacetimeDB, stripping the `/stdb` prefix if the server is mounted at `/`. Supply only the server base URI, not the database subscription endpoint.
+
 #### Method `withDatabaseName`
 
 ```typescript
@@ -243,6 +245,8 @@ class DbConnectionBuilder {
 ```
 
 Called when an established connection is lost, or when the application calls [`disconnect`](#method-disconnect). With automatic reconnection enabled, the trailing parameters describe the next attempt and delay in milliseconds. Both are `undefined` when no retry is scheduled. An explicit `disconnect()` also passes `undefined` for `error`, including when called between reconnect attempts.
+
+If a server message cannot be decoded or applied, the SDK ends the connection without retrying, even when automatic reconnect is enabled. The error reaches `onConnectError` before the first successful handshake, or `onDisconnect` afterwards. Synchronous exceptions thrown by user callbacks are logged and do not prevent other callbacks from running.
 
 #### Method `withToken`
 

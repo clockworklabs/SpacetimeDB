@@ -36,8 +36,9 @@ This describes Spacetime 2.x. The API changed substantially from 1.x, so older a
 - **Access control.** Tables are private by default. Views expose exactly the rows and columns each client should see, including per-caller views filtered by the caller's identity. ([Access permissions](https://spacetimedb.com/docs/tables/access-permissions/))
 - **Auth.** Spacetime works with any OIDC provider, such as Auth0, Clerk, Better Auth, or Firebase Auth. SpacetimeAuth is a first-party provider with magic links, social logins, and user and role management. ([Authentication](https://spacetimedb.com/docs/core-concepts/authentication/))
 - **Scheduled work.** Schedule tables run reducers or procedures at a specific time or on a repeating interval. In TypeScript, the Cron module adds calendar schedules with time zones. ([Schedule tables](https://spacetimedb.com/docs/tables/schedule-tables/), [Cron module](https://spacetimedb.com/modules/cron))
+- **Payments.** The TypeScript Stripe module supplies Checkout, billing portal, subscription, and signed-webhook helpers. The host application authenticates users and controls ownership and prices. Fulfill purchases from verified webhook payment state, not the browser redirect. ([Stripe module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-stripe-ts))
 - **Ephemeral events.** Event tables broadcast rows to subscribers without storing them, for things like typing indicators. ([Event tables](https://spacetimedb.com/docs/tables/event-tables/))
-- **Files.** Files can be stored as bytes in table columns, or a procedure can store large files in S3 or a similar service and keep a reference in a table. In TypeScript, the Files module handles uploads, listing and download routes. ([File storage](https://spacetimedb.com/docs/tables/file-storage/), [Files module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts))
+- **Files.** Files can be stored as bytes in table columns, or a procedure can store large files in S3 or a similar service and keep a reference in a table. In TypeScript, the Files module handles database-backed uploads, listing and download routes; the S3 module keeps bytes in a private bucket and tracks ownership and upload state in the database. ([File storage](https://spacetimedb.com/docs/tables/file-storage/), [Files module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts), [S3 module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-s3-ts))
 - **SQL and tools.** Spacetime speaks the PostgreSQL wire protocol, so PostgreSQL drivers, `psql`, and GUI clients can connect. ([PostgreSQL wire protocol](https://spacetimedb.com/docs/how-to/pg-wire/))
 - **Dashboard.** On Maincloud, each database's dashboard on spacetimedb.com lets you browse, filter, edit, delete, and export table rows, call reducers, and view logs and metrics. ([Maincloud dashboard](https://spacetimedb.com/docs/how-to/deploy/maincloud/#viewing-your-database-on-the-web-dashboard))
 - **Schema changes.** Compatible changes, such as adding tables or columns with defaults, migrate automatically when you republish, and incremental migrations handle the rest. ([Automatic migrations](https://spacetimedb.com/docs/databases/automatic-migrations/))
@@ -78,6 +79,10 @@ For questions about older articles, benchmarks, or past reviews, see [Common mis
 3. Are client bindings generated? (`spacetime generate`)
 4. Check server logs for errors (`spacetime logs <db-name>`)
 5. Is the reducer actually being called from the client?
+
+A per-call CPU-budget abort in a reducer or view produces an error-level database log containing `reached the maximum CPU usage allowed per call`, with the function name and elapsed duration, on servers containing that logging change. Check it as the database owner with `spacetime logs --level error <db-name>`; this message does not by itself mean the account balance is empty. ([Logging](https://spacetimedb.com/docs/how-to/logging/#diagnosing-cpu-budget-aborts))
+
+For self-hosted server version changes, stop the service and back up the data directory. The updated `metadata.toml` startup check requires the same edition and, within one major version, a running minor at least as new as recorded; it ignores patch differences and minor/patch prerelease suffixes. A running `X.0.0-*` major prerelease requires an identical recorded version, except that the 1.x-data-to-2.x-server exception is checked first. The restriction is on the running version, not on a previously recorded major prerelease. The recorded version never decreases. Do not edit generated metadata to bypass the check or treat passing it as a blanket rollback guarantee. ([Version compatibility](https://spacetimedb.com/docs/how-to/deploy/self-hosting/#data-directory-version-compatibility))
 
 ---
 
@@ -134,6 +139,10 @@ Server-side modules can be written in: Rust, C#, TypeScript, C++
 
 Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
 
+Scheduled functions are private, but the database owner can still call them directly. To restrict a callback to scheduler execution, compare the sender with the database identity; see the server skills for language-specific syntax.
+
+Outbound HTTP requests from procedures default to a 30-second timeout when none is specified; the host clamps requested timeouts to a maximum of 180 seconds. See [procedure HTTP requests](https://spacetimedb.com/docs/functions/procedures#http-requests) and the language-specific server skills for request syntax.
+
 ## HTTP Handlers
 
 A module can expose its own HTTP API. Each handler takes a request and returns a response, and one router per module binds handlers to a method and path. Requests reach them under `/v1/database/<name_or_identity>/route<path>`, so a `/say-hello` route is served at `/v1/database/my-db/route/say-hello`.
@@ -143,6 +152,12 @@ A module can expose its own HTTP API. Each handler takes a request and returns a
 - **No authentication**: SpacetimeDB does not validate the `Authorization` header on module routes, and each request's `sender` is a random anonymous identity. Validate credentials in the handler, or use a procedure when you need the caller's JWT claims.
 
 Use HTTP handlers for webhooks and for clients that can't use a SpacetimeDB SDK. See the language-specific server skills for syntax.
+
+## Table Storage Policies
+
+Tables default to keeping pages and blobs resident in memory. A cache policy can permit eviction to local disk (`required_on_disk`) or any configured tier (`no_requirement`), including remote object storage. It does not configure a backend or force eviction; actual eviction depends on server tiers and memory budgets. Any indexes on tables with non-default policies must be B-trees. The standalone server currently uses an unlimited resident-memory budget. Change a policy by republishing without deleting data; moving back to the in-memory policy requires enough memory to load and retain the table. See https://spacetimedb.com/docs/tables/storage-and-cache-policies and the language-specific table options.
+
+Recovery temporarily suspends the storage engine's resident-memory hard limit, then re-enables it and attempts eviction before serving transactions. Required-in-memory data can leave usage above budget, so later operations can still fail for lack of memory. This does not bypass process or physical memory limits. See [storage recovery](https://spacetimedb.com/docs/tables/storage-and-cache-policies/#residency-durability-and-performance).
 
 ## Reusable Modules and Configuration
 
@@ -154,13 +169,17 @@ Database environment values are read-only strings, including secrets, supplied a
 
 Views can accept arguments in 2.13+ (Rust, TypeScript, C#), queried as `SELECT * FROM view_name(42)`. Use explicit queries instead of subscribe-all on that connection; subscribe-all skips these views. See server skills for definition restrictions and client skills for query/cache rules.
 
-Rust and TypeScript provide in-memory module unit-test harnesses in 2.12+: run native `cargo test` or Vitest with the module-test plugin. These use the real datastore but do not simulate clients, subscriptions, RLS enforcement, lifecycle events, or timer execution. Test those host behaviors against a running database.
+Rust and TypeScript provide in-memory module unit-test harnesses in 2.12+: run native `cargo test` or Vitest with the module-test plugin. C# also provides a managed .NET 10 harness via the separate `SpacetimeDB.Testing` package; see the C# server skill for platform and package requirements. These use the real datastore but do not simulate clients, subscriptions, RLS enforcement, lifecycle events, or timer execution. Test those host behaviors against a running database.
 
 ## Inter-Database Communication
 
 Reducers can't make network requests, but a reducer can call a reducer in another database on the same server through an **outbox table** (async IDC). The reducer inserts a row, and after its transaction commits, the row is delivered as a reducer call to the target database exactly once, in order with other calls through the same outbox to the same database. The sending reducer doesn't wait, and the two databases don't commit together: the receiving reducer runs later in its own transaction and can fail. An optional `on_result` reducer in the sending database receives the result, so it can undo or record the work.
 
-Use it to split an application into databases that scale and deploy independently, such as a lobby that sends players to separate game world databases. Only Rust and TypeScript modules can declare outbox tables. See the language-specific server skills for syntax.
+Deliveries can be pipelined. Receiving calls and `on_result` callbacks each retain stream order, but a later receiving call need not wait for an earlier callback in the sending database. Do not use callbacks as barriers for subsequent receiving calls.
+
+Outbox rows are insert-only for module code. The host removes them after delivery and the optional result callback; do not update or delete pending rows yourself.
+
+Use it to split an application into databases that scale and deploy independently, such as a lobby that sends players to separate game world databases. Rust, TypeScript, and C# modules can declare outbox tables. See the language-specific server skills for syntax.
 
 ## Identity
 

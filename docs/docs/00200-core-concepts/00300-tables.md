@@ -328,6 +328,12 @@ Use idiomatic naming conventions for each language:
 
 These conventions align with each language's standard style guides and make your code feel natural within its ecosystem.
 
+## Storage Policy
+
+A table's cache policy controls which storage tiers its pages and blobs may use. It does not change transaction guarantees, durability, or table visibility. Tables default to keeping their data resident in memory.
+
+See [Table Storage and Cache Policies](./00300-tables/00700-storage-and-cache-policies.md) for policy values, cross-language examples, index restrictions, and migration requirements.
+
 ## Table Visibility
 
 Tables can be **private** (default) or **public**:

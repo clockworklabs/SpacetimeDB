@@ -58,9 +58,11 @@ For TypeScript client bindings, `spacetime generate --lang typescript --import-e
 
 ### Client and Module Bindings
 
-`spacetime generate --bindings client` (default) generates bindings for clients connecting to a database. `--bindings module` generates receiver bindings used inside a **sending database module** to call reducers in another **receiving database** through asynchronous IDC. Rust and TypeScript module bindings are supported; C#/C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.
+`spacetime generate --bindings client` (default) generates bindings for clients connecting to a database. `--bindings module` generates receiver bindings used inside a **sending database module** to call reducers in another **receiving database** through asynchronous IDC. Rust, TypeScript, and C# module bindings are supported; C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.
 
 In `spacetime.json`, each sending database's non-inherited `dependencies` array requires its own `module-path` and dependency `name` plus receiving-module `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. A direct receiving module source takes precedence. Dependencies do not themselves publish receiving databases or inherit the sending module's build settings. `generate <sending-database>` processes both its regular `generate` entries (client bindings by default) and `dependencies` (module bindings automatically); no `--bindings` flag or second `generate` entry is needed for a dependency. For dependencies, module binding language defaults to the sending module's language and Rust/TypeScript output defaults to `<sending module-path>/src/remote_bindings`. Explicit config `out-dir` is config-relative. A regular `generate` entry can select `"bindings": "module"`, but does not use dependency language or output defaults. The CLI `--bindings` override is allowed only when a single generation entry is selected.
+
+C# dependency output defaults to `<sending module-path>/remote_bindings/<dependency name>`, with namespace `RemoteBindings.<PascalCase dependency name>`. Set `namespace` on that dependency to override it. Direct `--bindings module --lang csharp` generation without a dependency name defaults to `RemoteBindings`; client bindings still default to `SpacetimeDB.Types`. `--namespace` overrides the C# namespace. In a module-bindings namespace, later segments cannot be `System`, `SpacetimeDB`, or the first segment: for example, `RemoteBindings.System` is rejected.
 
 `dev` generates only root dependencies before building the sending module, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples.
 
@@ -75,11 +77,15 @@ Use `spacetime init --lang csharp --dotnet-version 10 my-project` to select
 
 Do not make the project permanently WASM-only to fix a managed build: keep LLVM
 package references and WASM settings conditional on the RID. Let dotnet restore
-when changing build modes. Managed builds alone do not enable C# module unit tests.
+when changing build modes. Managed builds alone do not enable C# module unit tests:
+use a separate .NET 10 test project with the matching `SpacetimeDB.Testing`
+package and a supported native platform, as described in the C# server skill.
 
 .NET 8 retains WASM/JIT by default and requires `--native-aot` to select NativeAOT
 where supported. The CLI manages `SPACETIMEDB_WASM_AOT` and its legacy alias
 `EXPERIMENTAL_WASM_AOT`; users do not need to set either for .NET 10.
+
+New databases receive a server-allocated identity; a supplied identity can update an existing database, not create one. Only the registered name owner can recreate a deleted database whose name remains registered.
 
 ### Publishing & Deployment
 
@@ -179,6 +185,10 @@ spacetime server clear
 ```
 
 ### Authentication
+
+Log in with `spacetime login` before publishing, including to local servers. Without a saved login, the browser-login prompt defaults to yes; declining it shows a server-issued identity warning and a second prompt that defaults to no. A server-issued identity works only on its issuing server, owns databases published with it, and cannot be recovered if its token is lost. A later `spacetime login` replaces that saved token.
+
+`--yes` / `--yes=skip-login` and closed stdin can still create a server-issued identity for compatibility; they do not authenticate you with spacetimedb.com. Do not use them to bypass login setup for unattended publishing. Alert the user before intentionally creating a server-issued identity.
 
 ```bash
 # Login (opens browser)

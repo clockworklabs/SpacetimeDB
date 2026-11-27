@@ -419,6 +419,10 @@ SpacetimeDB passes the schedule row to the scheduled reducer or procedure as an 
 - Scheduled reducers delete the row after execution, so the row is visible in the schedule table while the reducer runs.
 - Interval schedules are never deleted automatically. Only one-shot schedules are removed after they run.
 
+### Who Can Call Scheduled Functions
+
+Scheduled reducers and procedures are private: ordinary clients cannot call them, but the database owner can invoke them directly. If a callback must reject even owner-initiated calls, check that its sender is the database identity (`ctx.sender.isEqual(ctx.databaseIdentity)` in TypeScript, `ctx.sender() == ctx.database_identity()` in Rust, or `ctx.Sender == ctx.DatabaseIdentity` in C#).
+
 ## Use Cases
 
 - **Reminders and notifications** - Schedule messages to be sent at specific times

@@ -151,6 +151,8 @@ const user = table(
 Never use bare `Index` — it conflicts with `System.Index`. Always write `SpacetimeDB.Index.BTree`. For table-level indexes, use `Columns = new[] { nameof(Col) }` or `new[] { "Col1", "Col2" }`, not collection expressions like `[nameof(X)]`.
 :::
 
+A single-column `[SpacetimeDB.Index.BTree]` on a `[Unique]` or `[PrimaryKey]` column is now that column's **unique index**, not an additional non-unique index. Only the declared index accessor remains, with `Find`, `Update`, and `Delete`, not `Filter`. For example, if you declare `Accessor = "ById"` for the `Id` primary key below, use `ctx.Db.User.ById.Find(id)`, not `ctx.Db.User.Id.Find(id)` or `ctx.Db.User.ById.Filter(id)`. When updating an existing module, adjust those calls or remove the redundant index declaration to keep the column-named accessor. Indexes on non-unique columns, such as `Name` and `Age` below, still support `Filter`.
+
 ```csharp
 [SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User

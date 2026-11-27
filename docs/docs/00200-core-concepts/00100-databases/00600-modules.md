@@ -14,6 +14,19 @@ Modules let you package reusable database logic as a library that any consumer c
 Submodules are supported in TypeScript and C# (.NET 10 only). Cross-language composition is not supported.
 :::
 
+## Reusable TypeScript Packages
+
+Official packages provide reusable application features. Follow each package's integration guide: not every package root is a mountable submodule.
+
+- [Auth](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-auth-ts) provides application-managed password and OAuth sign-in, sessions, and connection bindings. Mount `@spacetimedb/auth/submodule`, initialize it from the root, and configure its signing key and root HTTP routes. This is a library inside your application, not the hosted SpacetimeAuth service.
+- [Agents](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-agents-ts) stores conversations and runs model calls with application tools. Mount `@spacetimedb/agents/submodule` and initialize it from the root. The host must authenticate callers, derive conversation ownership from trusted state, and enforce quotas before paid model calls.
+- [Files](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts) stores file contents in database tables and supplies upload, listing, and download helpers. Mount `@spacetimedb/files/submodule`; pass its helper context from a reducer or a procedure transaction.
+- [S3](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-s3-ts) stores file contents in a private S3 bucket while keeping ownership and upload state in SpacetimeDB. Its guide covers bucket permissions, root environment declarations for credentials, initialization, and a scheduled reconciliation procedure. Derive file ownership on the server, never from a client-supplied owner.
+- [PostHog](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-posthog-ts) queues analytics events transactionally for scheduled delivery. Mount `@spacetimedb/posthog/submodule`, initialize it from the root, and configure the provider before sending events.
+- [Stripe](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-stripe-ts) supplies Checkout, customer billing portal, subscription, and signed-webhook helpers. Mount `@spacetimedb/stripe/submodule`, initialize it from the root, configure its credentials as an administrator, and delegate its webhook handler from the root router. Host procedures must authenticate users and derive ownership, prices, and return URLs from trusted state. Fulfill purchases from verified webhook payment state, not a browser redirect; see the package's [fulfillment guide](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-stripe-ts#checkout-fulfillment).
+
+These packages require SpacetimeDB SDK, CLI, and server 2.12 or later. Their tables are private; expose only authorized data through your application's views and operations. Perform network I/O in procedures or HTTP handlers, not inside transactions.
+
 ## Writing a Submodule
 
 A submodule is a regular SpacetimeDB module. The same module can be published independently or included by another module; no special root/library build role is required.
@@ -156,6 +169,27 @@ const spacetimedb = schema({
   payments: { name: 'billing', module: paymentLib },   // ctx.db.payments, stored as "billing"
 });
 ```
+
+Inside a TypeScript submodule view, `ctx.from` uses the library's local schema keys, just like `ctx.db`, even when a table has an explicit canonical `name`. For example, the library can export:
+
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+const sessions = table(
+  { name: 'auth_sessions', public: true },
+  { id: t.u64().primaryKey().autoInc() },
+);
+const authSchema = schema({ sessions });
+export default authSchema;
+
+export const allSessions = authSchema.anonymousView(
+  { public: true },
+  t.array(sessions.rowType),
+  ctx => ctx.from.sessions,
+);
+```
+
+Mount the full library namespace under `myAuth` as above. The view still uses `ctx.from.sessions`, not `ctx.from.auth_sessions` or a consumer namespace prefix. The query builder qualifies the table for the mount automatically. When writing raw SQL, use the complete canonical path instead; do not combine an accessor namespace with a canonical table name.
 
 :::warning Changing a canonical namespace re-creates its tables
 The canonical namespace is part of every table's identity. Publishing a module whose namespace canonicalizes differently than before, for example after renaming the key from `myauth` to `myAuth` without a `name`, is a migration that removes the tables under the old namespace and creates empty ones under the new namespace. To rename the key without touching the tables, pin the canonical name with `name`: changing only the key while keeping the same `name` only updates the accessor aliases.

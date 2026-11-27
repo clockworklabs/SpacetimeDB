@@ -26,7 +26,7 @@ By contrast, Spacetime async IDC provides a set of important guarantees that red
 
 - **Atomic with the sending transaction** An outbox row is part of the transaction that inserts it. If the transaction commits, SpacetimeDB sends the call. If it rolls back, nothing is sent.
 - **Exactly once semantics** Spacetime retries delivery until the receiving database answers, and the receiving database discards duplicates, so the receiving reducer runs once for each row. This invariant is maintained across crashes and server restarts, without any additional work from the module developer.
-- **In order** Calls through one outbox table to one database run in the order their rows were inserted. Calls through different outbox tables, or to different databases, are not ordered relative to each other.
+- **In order** Calls through one outbox table to one database run in the order their rows were inserted. Calls through different outbox tables, or to different databases, are not ordered relative to each other. Deliveries may be pipelined, but receiving calls and `on_result` callbacks retain stream order. A later receiving call can run before an earlier call's `on_result`; do not use that callback as a barrier for later receiving calls.
 - **Durable first** Spacetime sends a call only after the transaction that inserted it is durable, so the receiving database never acts on a call from a transaction that the sending database could lose in a crash.
 - **Non-blocking** The sending reducer finishes as soon as its transaction commits. The receiving database doesn't need to be available at the time of the call. The call will be made once the receiving database is available.
 - **Authenticated** In the receiving reducer, `ctx.sender` is the sending database's identity. Spacetime authenticates all async IDC calls, so one database can't pose as another.
@@ -64,7 +64,7 @@ In the `game_world` module, write `admit_player` as an ordinary reducer. It may 
 // game_world/src/index.ts
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
-const MAX_PLAYERS = 2n;
+const maxPlayers = 2n;
 
 const player = table({ public: true }, { name: t.string().primaryKey() });
 
@@ -74,7 +74,7 @@ export default spacetimedb;
 export const admitPlayer = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    if (ctx.db.player.count() >= MAX_PLAYERS) {
+    if (ctx.db.player.count() >= maxPlayers) {
       throw new SenderError('The world is full');
     }
     ctx.db.player.insert({ name });
@@ -578,7 +578,9 @@ spacetimedb::outbox!(game_world::admit_player);
 ctx.db.admit_player_outbox().insert(AdmitPlayerOutbox { msg_id: 0, target: world, name });
 ```
 
-Pass `accessor = ...` or `name = "..."` to name the table differently. It can't declare an outbox for a reducer with a parameter named `msg_id` or `target`, or a second outbox for the same reducer. For those, use `#[table]` to manually declare an outbox table, and give the message ID and target columns other names.
+For the `admit_player(name: String)` reducer above, this creates `AdmitPlayerOutbox` with `msg_id: u64`, `target: game_world::Identity`, and `name: String`, accessed through `ctx.db.admit_player_outbox()`. Insert `msg_id: 0` to allocate the message ID. Optional `accessor = custom_outbox` and `name = "custom_outbox"` arguments override the accessor and canonical table name. The receiver must be in scope as a module identifier. If its arguments include `msg_id` or `target`, or you need multiple outboxes for the same reducer or extra columns, declare the table manually instead.
+
+Rust receiver bindings now use `mod.rs` as their root. Regenerate older bindings and remove any obsolete `#[path = "remote_bindings/game_world/lib.rs"]` override; the normal `mod remote_bindings;` declaration works with the generated directory structure.
 
 </TabItem>
 </Tabs>

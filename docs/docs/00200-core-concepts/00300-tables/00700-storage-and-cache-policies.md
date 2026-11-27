@@ -18,6 +18,10 @@ SpacetimeDB uses tiered storage to keep frequently accessed data in memory while
 
 Omitting the setting selects the in-memory policy. SpacetimeDB moves eligible data out of memory as it needs room and loads it again when accessed. See [Resident memory limits](../../00250-how-to/00100-deploy/00100-maincloud.md#resident-memory-limits) for how this works on Maincloud.
 
+Any indexes on tables with `required_on_disk` or `no_requirement` must be **B-trees**. Hash and direct indexes are not supported on those tables. If you change an existing table's policy, check its indexes before republishing.
+
+The standalone server currently uses an unlimited resident-memory budget, so choosing a policy alone does not make a local database evict data. Eviction depends on the server's configured storage tiers and memory budget; a cache policy does not configure a backend or force eviction.
+
 ## Declare the Policy in Your Module
 
 These examples define a table that can page to local disk and a table that can page to any available tier.
@@ -106,6 +110,8 @@ pub struct ArchivedHistory {
 ## Residency, Durability, and Performance
 
 Cache policies control where data can reside while the database is running. They do not affect durability. For example, when a database restarts, SpacetimeDB recovers data even for tables configured to reside fully in memory.
+
+During database recovery, the storage engine temporarily suspends enforcement of the resident-memory hard limit while reconstructing committed data, rebuilding state, and running startup migrations. It then re-enables the limit and attempts to trim eligible data before serving transactions. Required-in-memory data can keep usage above the configured limit; recovery is not a guarantee that subsequent operations have enough memory to succeed. This storage-engine budget is not a process or machine memory limit: recovery still needs enough physical memory to complete.
 
 The policy applies to table pages and large values stored as blobs. A blob shared by multiple tables stays in memory if at least one of their policies requires it.
 

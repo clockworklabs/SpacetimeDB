@@ -17,6 +17,8 @@ Generated bindings convert snake_case names to camelCase, including row fields: 
 
 The examples below use bundler-style extensionless imports. For NodeNext or direct-TypeScript execution, choose the matching binding import extension and use explicit file imports in your application; see https://spacetimedb.com/docs/clients/typescript#import-extensions.
 
+`withUri` takes the server base URI, not a subscription endpoint. It preserves a path prefix: `wss://example.com/stdb` (or `/stdb/`) uses `/stdb/v1/database/<database>/subscribe` and the HTTPS token-exchange endpoint `/stdb/v1/identity/websocket-token`. A reverse proxy must forward both endpoints, stripping its prefix when forwarding to a root-mounted server.
+
 ## React: main.tsx
 
 ```typescript
@@ -163,6 +165,8 @@ conn.subscriptionBuilder().subscribe('SELECT * FROM by_id(42)');
 ```
 
 Use explicit queries for every table on that connection, not subscribe-all, which skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input. In React, raw SQL subscriptions need explicit lifetime management and cleanup; `useTable` does not supply an argument-bearing view builder.
+
+A server message that cannot be decoded or applied ends the connection without automatic retry: errors go to `onConnectError` before establishment or `onDisconnect` afterwards. Synchronous exceptions thrown by user callbacks are logged without preventing other callbacks from running. TypeScript SDKs containing the row-boundary decoding fix (#6091) can read rows with appended table columns using older generated bindings; removing, reordering, or changing existing column types is not. Regenerate bindings to access added columns.
 
 ## Automatic Reconnect and Token Refresh
 

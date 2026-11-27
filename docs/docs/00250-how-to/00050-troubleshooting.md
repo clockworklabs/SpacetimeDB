@@ -65,6 +65,10 @@ If you see `Database resident memory budget exceeded`, the operation couldn't ge
 2. **Allow a table to use more storage tiers.** Change its [cache policy](../00200-core-concepts/00300-tables/00700-storage-and-cache-policies.md) to `RequiredOnDisk` to allow paging to local disk, or to `NoRequirement` to allow paging to any available tier. Follow the [migration steps](../00200-core-concepts/00100-databases/00500-migrations/00200-automatic-migrations.md#changing-a-tables-cache-policy) to republish while keeping existing rows. SpacetimeDB can then evict eligible data as it needs room.
 3. **Contact Maincloud support if recovery operations also hit the limit.** Include your database identity, the operation that failed, and the full error message.
 
+## TypeScript module memory limit exceeded
+
+`Javascript module exceeded memory limit` refers to the TypeScript module's V8 runtime, not the database's resident storage budget. `ArrayBuffer` allocations, including typed-array backing buffers, count toward the V8 memory limit as well as ordinary JavaScript objects. Reduce peak allocations: process large inputs in smaller batches and avoid retaining or copying entire buffers unnecessarily. Allowing tables to page to disk does not increase the V8 limit.
+
 ## In Modules
 
 ### Identity seen by reducers never changes

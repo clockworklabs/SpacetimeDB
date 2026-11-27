@@ -30,8 +30,17 @@ an administrator with `stripe.set_stripe_config`. See the arguments in
 with Stripe and select the [events listed below](#webhook-events-handled).
 
 ```ts
-import { Router, SenderError, schema, t } from 'spacetimedb/server';
+import { Router, SenderError, schema, table, t } from 'spacetimedb/server';
 import * as stripe from '@spacetimedb/stripe/submodule';
+
+const storeProduct = table(
+  { name: 'store_product' },
+  {
+    productId: t.string().primaryKey(),
+    active: t.bool(),
+    stripePriceId: t.option(t.string()),
+  }
+);
 
 const spacetimedb = schema({ stripe, storeProduct });
 export default spacetimedb;
@@ -48,10 +57,13 @@ export const router = spacetimedb.httpRouter(
 );
 ```
 
-The submodule's procedures are admin-only. Signed-in users reach Stripe through
-host procedures that call the host helpers with `ctx.as.stripe`. The host
-procedure resolves the user from `ctx.sender`,
-takes prices from a server-owned catalog, and fixes the return URLs:
+The submodule's billing and query procedures are admin-only. Application users
+reach Stripe through host procedures that call the host helpers with
+`ctx.as.stripe`. These helpers do not authenticate the caller. The example below
+keys customers by the caller's SpacetimeDB identity and accepts any connected
+identity; add your application's account authorization and rate limits before
+exposing checkout publicly. The host procedure resolves the user from
+`ctx.sender`, takes prices from a server-owned catalog, and fixes the return URLs:
 
 ```ts
 const APP_ORIGIN = 'https://store.example.com';
@@ -116,7 +128,7 @@ For `t.option(...)` CLI arguments, use `null` for no value and
 Verify:
 
 ```bash
-spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status '{}'
+spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status
 ```
 
 ## Private tables
