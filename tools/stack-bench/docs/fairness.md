@@ -8,8 +8,7 @@ records where the stacks are treated differently, and why.
 - One feature list and one set of checks. Prompts differ only in each stack's
   setup and interface details.
 - The same time limit and cost cap for every run in a study.
-- Seeded bugs: for each stack, every L3 check must catch one before the checks
-  count as qualified.
+- Seeded bugs: each stack's reference app has a seeded bug for every L3 check.
 - The same network rules. Coding sessions cannot reach GitHub, where the checks
   are public. Grading cannot reach anything outside the attempt.
 
@@ -25,13 +24,14 @@ their setup only.
 - **What they are:** the skills a Spacetime user installs from the SpacetimeDB
   repository. Corrections found while building StackBench were checked against
   the CLI and SDK source and proposed as a change to those skills.
-- **Comparing without them:** the `neutral-no-sdk` and `neutral-dev-no-sdk`
-  profiles run Spacetime with no skills (see [Prompting](prompting.md#stack-setup)).
+- **Comparing without them:** the `neutral-no-sdk` profile runs Spacetime with
+  no skills, and `neutral-dev-no-sdk` with only the `spacetime dev` page (see
+  [Prompting](prompting.md#stack-setup)).
 
 Spacetime agents also receive one short page StackBench wrote,
 `backends/workflows/spacetime-dev.md`, on using `spacetime dev`, as part of the
-prompt. The prompt check that refuses any hint of the hidden checks covers that
-page. It skips only the public skills, which are product documents and discuss
+prompt. The prompt check that refuses internal words such as "test", "grader" and
+"benchmark" covers that page. It skips only the public skills, which are product documents and discuss
 testing.
 
 ## Which Spacetime runs

@@ -95,8 +95,8 @@ of these, from [`conditions/catalog.json`](../conditions/catalog.json):
 
 | Profile | Spacetime skills |
 | --- | --- |
-| `neutral` (default) | TypeScript server, TypeScript client, CLI |
-| `neutral-dev` | The same, plus the `spacetime dev` watch workflow |
+| `neutral` | TypeScript server, TypeScript client, CLI |
+| `neutral-dev` (dashboard default) | The same, plus the `spacetime dev` watch workflow |
 | `neutral-no-sdk` | None |
 | `neutral-dev-no-sdk` | Dev workflow only |
 | `prescribed` | SDK skills plus stack documents with design advice |
