@@ -62,7 +62,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use which::which;
 
 /// Returns the remote server URL if running against a remote server.
@@ -1062,6 +1062,70 @@ pub fn noop(_ctx: &ReducerContext) {}
     }
 }
 
+/// Default limit for one spacetime CLI command. `publish` builds the module, so allow for a cold build.
+const DEFAULT_CLI_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// The limit for one spacetime CLI command. Set `SMOKETEST_CLI_TIMEOUT_SECS` to override it.
+fn cli_timeout() -> Duration {
+    std::env::var("SMOKETEST_CLI_TIMEOUT_SECS")
+        .ok()
+        .and_then(|secs| secs.parse().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_CLI_TIMEOUT)
+}
+
+/// Wait for a spacetime command spawned with piped stdout and stderr.
+///
+/// Panics with the command and its partial output if it runs past [`cli_timeout`],
+/// so a stuck server request fails the test instead of hanging until the CI job times out.
+fn wait_with_timeout(mut child: std::process::Child, args: &[&str]) -> Output {
+    // Drain both pipes on threads so a full pipe cannot block the child.
+    fn drain(pipe: Option<impl std::io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
+    }
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+
+    let timeout = cli_timeout();
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("Failed to wait for spacetime command") {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            // A grandchild, like a module build, can keep a pipe open after the kill.
+            // Don't let reading the partial output hang too.
+            let grace = Instant::now() + Duration::from_secs(5);
+            while !(stdout.is_finished() && stderr.is_finished()) && Instant::now() < grace {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let output = |reader: std::thread::JoinHandle<Vec<u8>>| match reader.is_finished() {
+                true => String::from_utf8_lossy(&reader.join().unwrap_or_default()).into_owned(),
+                false => "<unavailable: pipe still open>".to_owned(),
+            };
+            panic!(
+                "spacetime {args:?} timed out after {timeout:?}:\nstdout: {}\nstderr: {}",
+                output(stdout),
+                output(stderr),
+            );
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    Output {
+        status,
+        stdout: stdout.join().expect("stdout reader panicked"),
+        stderr: stderr.join().expect("stderr reader panicked"),
+    }
+}
+
 impl Smoketest {
     fn cli_path(&self) -> PathBuf {
         self.cli_path.clone().unwrap_or_else(ensure_binaries_built)
@@ -1193,13 +1257,17 @@ impl Smoketest {
         let cmd_name = args.first().unwrap_or(&"unknown");
         eprintln!("[TIMING] spacetime {cmd_name}: starting at {start:?}");
 
-        let output = Command::new(&cli_path)
+        let child = Command::new(&cli_path)
             .arg("--config-path")
             .arg(&self.config_path)
             .args(args)
             .current_dir(self.project_dir.path())
-            .output()
-            .expect("Failed to execute spacetime command");
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn spacetime command");
+        let output = wait_with_timeout(child, args);
 
         eprintln!("[TIMING] spacetime {}: completed in {:?}", cmd_name, start.elapsed());
 
@@ -1232,8 +1300,10 @@ impl Smoketest {
                 .write_all(stdin_input.as_bytes())
                 .expect("Failed to write spacetime stdin");
         }
+        // Close stdin so the command sees EOF.
+        drop(child.stdin.take());
 
-        let output = child.wait_with_output().expect("Failed to wait for spacetime command");
+        let output = wait_with_timeout(child, args);
 
         let cmd_name = args.first().unwrap_or(&"unknown");
         eprintln!("[TIMING] spacetime {} (stdin): {:?}", cmd_name, start.elapsed());
