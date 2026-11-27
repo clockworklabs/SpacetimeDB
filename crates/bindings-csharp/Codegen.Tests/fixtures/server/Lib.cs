@@ -455,3 +455,70 @@ public static partial class OutboxReducers
         Result<Unit, string> result
     ) { }
 }
+
+// A local outbox calls a reducer of this module, so it needs no receiver bindings.
+public static partial class LocalOutboxReducers
+{
+    // The outbox names the source name, ReceiveLocalPing, not the canonical one.
+    [SpacetimeDB.Reducer(Name = "AcceptLocalPing")]
+    public static void ReceiveLocalPing(ReducerContext ctx, string messageBody, uint attempt) { }
+
+    [SpacetimeDB.Reducer]
+    public static void SendLocalPing(ReducerContext ctx)
+    {
+        ctx.Db.LocalPingOutbox.Insert(
+            new LocalPingRow
+            {
+                Target = ctx.Sender,
+                Attempt = 1,
+                Body = "ping",
+            }
+        );
+        ctx.Db.LocalPingGenerated.Insert(
+            new LocalPingGeneratedRow
+            {
+                Target = ctx.Sender,
+                MessageBody = "ping",
+                Attempt = 1,
+            }
+        );
+    }
+
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(LocalPingRow))]
+    public static void OnLocalPingResult(
+        ReducerContext ctx,
+        LocalPingRow row,
+        Result<Unit, string> result
+    ) { }
+}
+
+[SpacetimeDB.Table(
+    Accessor = "LocalPingOutbox",
+    Outbox = typeof(LocalOutboxReducers),
+    OutboxReducer = nameof(LocalOutboxReducers.ReceiveLocalPing)
+)]
+public partial struct LocalPingRow
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target]
+    public Identity Target;
+
+    // Columns follow the reducer's parameter order on the wire, not their own.
+    // Matches `attempt` by its snake_case name.
+    public uint Attempt;
+
+    [SpacetimeDB.Param("messageBody")]
+    public string Body;
+}
+
+// [Outbox] declares MsgId, Target, MessageBody and Attempt.
+[SpacetimeDB.Outbox(
+    typeof(LocalOutboxReducers),
+    ReducerName = nameof(LocalOutboxReducers.ReceiveLocalPing),
+    Accessor = "LocalPingGenerated"
+)]
+public partial struct LocalPingGeneratedRow { }

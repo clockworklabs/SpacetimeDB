@@ -102,9 +102,17 @@ namespace SpacetimeDB
 
         /// <summary>
         /// Makes this an outbox table: each row is a call to this reducer in another database.
-        /// Set it to a reducer from the receiver bindings.
+        /// Set it to a reducer from the receiver bindings, or, with <see cref="OutboxReducer"/>,
+        /// to the class declaring a reducer of this module.
         /// </summary>
         public System.Type? Outbox { get; init; }
+
+        /// <summary>
+        /// The name of a reducer of this module declared in <see cref="Outbox"/>, such as
+        /// <c>nameof(Module.ReceivePing)</c>. Each row calls it in the target database, which
+        /// runs this module too. It needs no receiver bindings.
+        /// </summary>
+        public string? OutboxReducer { get; init; }
     }
 
     /// <summary>
@@ -112,11 +120,17 @@ namespace SpacetimeDB
     /// <c>partial struct</c>: it gets a <c>MsgId</c> message ID column, a <c>Target</c> column,
     /// and a column for each of the reducer's parameters, named in Pascal case.
     /// </summary>
-    /// <param name="reducer">A reducer from the receiver bindings, such as <c>typeof(Gw.Reducers.AdmitPlayer)</c>.</param>
+    /// <param name="reducer">
+    /// A reducer from the receiver bindings, such as <c>typeof(Gw.Reducers.AdmitPlayer)</c>,
+    /// or, with <see cref="ReducerName"/>, the class declaring a reducer of this module.
+    /// </param>
     [AttributeUsage(AttributeTargets.Struct, Inherited = false)]
     public sealed class OutboxAttribute(System.Type reducer) : Attribute
     {
         public System.Type Reducer => reducer;
+
+        /// <inheritdoc cref="TableAttribute.OutboxReducer"/>
+        public string? ReducerName { get; init; }
 
         /// <inheritdoc cref="TableAttribute.Accessor"/>
         public string? Accessor { get; init; }

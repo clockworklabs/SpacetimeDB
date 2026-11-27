@@ -156,30 +156,38 @@ record OnResultRef(string Row, string? Table);
 
 /// <summary>
 /// The resolved outbox of a table accessor: everything <c>RawOutboxDefV10</c> needs except the
-/// <c>on_result</c> reducer, which is attached at registration.
+/// <c>on_result</c> reducer, which is attached at registration. <c>SignatureHash</c> is null for
+/// a reducer of this module: the host computes it, and <c>RemoteReducer</c> is then the
+/// reducer's source name, registered as a <c>RawLocalOutboxDefV10</c>.
 /// </summary>
 record OutboxInfo(
     string RemoteReducer,
-    string SignatureHash,
+    string? SignatureHash,
     int TargetColumn,
     EquatableArray<int> ArgColumns
 )
 {
     public string GenerateRegistration(string tableName, string? onResultReducer)
     {
+        var onResult = onResultReducer is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(onResultReducer, true);
+        if (SignatureHash is null)
+        {
+            return $"builder.RegisterLocalOutbox(new global::SpacetimeDB.Internal.RawLocalOutboxDefV10({SymbolDisplay.FormatLiteral(tableName, true)}, {SymbolDisplay.FormatLiteral(RemoteReducer, true)}, {TargetColumn}, [{string.Join(", ", ArgColumns)}], {onResult}));";
+        }
         // The hash is a `Hash`: a U256 read from its 32 bytes (64 hex digits) in little-endian
         // order. Word(n) is the ulong made of bytes n..n+7, most significant byte first.
         string Word(int offset) =>
             "0x"
             + string.Concat(
-                Enumerable.Range(0, 8).Select(i => SignatureHash.Substring((offset + 7 - i) * 2, 2))
+                Enumerable
+                    .Range(0, 8)
+                    .Select(i => SignatureHash!.Substring((offset + 7 - i) * 2, 2))
             )
             + "UL";
         var hash =
             $"new global::SpacetimeDB.U256(new global::SpacetimeDB.U128({Word(24)}, {Word(16)}), new global::SpacetimeDB.U128({Word(8)}, {Word(0)}))";
-        var onResult = onResultReducer is null
-            ? "null"
-            : SymbolDisplay.FormatLiteral(onResultReducer, true);
         return $"builder.RegisterOutbox(new global::SpacetimeDB.Internal.RawOutboxDefV10({SymbolDisplay.FormatLiteral(tableName, true)}, {SymbolDisplay.FormatLiteral(RemoteReducer, true)}, {TargetColumn}, [{string.Join(", ", ArgColumns)}], {onResult}, {hash}));";
     }
 }
@@ -400,7 +408,14 @@ record TableAccessor
             // Without generated columns, it already has an error, and no columns to check.
             if (table.HasGeneratedColumns && data.GetTypeArgument("reducer") is { } outboxReducer)
             {
-                Outbox = ResolveOutbox(table, outboxReducer, scheduled: false, data, diag);
+                Outbox = ResolveOutbox(
+                    table,
+                    outboxReducer,
+                    outbox.ReducerName,
+                    scheduled: false,
+                    data,
+                    diag
+                );
             }
             return;
         }
@@ -447,7 +462,25 @@ record TableAccessor
         if (data.GetTypeArgument(nameof(TableAttribute.Outbox)) is { } receiver)
         {
             IsOutbox = true;
-            Outbox = ResolveOutbox(table, receiver, attr.Scheduled is not null, data, diag);
+            Outbox = ResolveOutbox(
+                table,
+                receiver,
+                attr.OutboxReducer,
+                attr.Scheduled is not null,
+                data,
+                diag
+            );
+        }
+        else if (attr.OutboxReducer is not null)
+        {
+            IsOutbox = true;
+            diag.Report(
+                ErrorDescriptor.InvalidOutboxDeclaration,
+                (
+                    data,
+                    $"{Name} sets OutboxReducer without Outbox. Set Outbox to the class declaring {attr.OutboxReducer}."
+                )
+            );
         }
     }
 
@@ -455,20 +488,138 @@ record TableAccessor
     public static bool IsReceiver(INamedTypeSymbol type) =>
         type.AllInterfaces.Any(i => i.ToString() == "SpacetimeDB.Internal.IOutboxReceiver");
 
-    /// <summary>A receiver marker class's fields: one per reducer parameter, in order.</summary>
-    public static IEnumerable<IFieldSymbol> ReceiverParameters(INamedTypeSymbol receiver) =>
-        receiver
-            .GetMembers()
-            .OfType<IFieldSymbol>()
-            .Where(f => !f.IsConst && !f.IsStatic && !f.IsImplicitlyDeclared);
+    /// <summary>
+    /// A receiver reducer's parameter. A remote one has its canonical name from the bindings.
+    /// A local one has its C# name, and also answers to that name in snake case, like a column.
+    /// </summary>
+    public sealed record ReceiverParameter(
+        string Name,
+        ITypeSymbol Type,
+        ISymbol Symbol,
+        bool IsLocal
+    )
+    {
+        public bool Matches(string columnName) =>
+            columnName == Name || (IsLocal && columnName == SnakeCase(Name));
+    }
 
     /// <summary>
-    /// Validates an outbox table against its receiver reducer's marker class from receiver
-    /// bindings, and matches the reducer's parameters to columns. Reports every problem.
+    /// The reducer an outbox calls: a marker class from receiver bindings, or a reducer of this
+    /// module named by <c>OutboxReducer</c>. <see cref="SignatureHash"/> is null for a local
+    /// reducer; the host computes it, and <see cref="ReducerName"/> is then the source name.
+    /// </summary>
+    public sealed record Receiver(
+        string ReducerName,
+        string? SignatureHash,
+        string IdentityName,
+        INamedTypeSymbol? Identity,
+        ImmutableArray<ReceiverParameter> Parameters
+    );
+
+    /// <summary>
+    /// Resolves an outbox's receiver, or reports why it can't through <paramref name="error"/>.
+    /// </summary>
+    public static Receiver? ResolveReceiver(
+        string table,
+        INamedTypeSymbol type,
+        string? localReducer,
+        Action<string> error
+    )
+    {
+        if (localReducer is not null)
+        {
+            if (IsReceiver(type))
+            {
+                error(
+                    $"{table}: Outbox type {type} is a reducer from receiver bindings, so it can't take OutboxReducer. Remove OutboxReducer, or set Outbox to the class declaring {localReducer}."
+                );
+                return null;
+            }
+            var reducers = type.GetMembers(localReducer)
+                .OfType<IMethodSymbol>()
+                .Where(m =>
+                    m.GetAttributes()
+                        .Any(a => a.AttributeClass?.ToString() == typeof(ReducerAttribute).FullName)
+                )
+                .ToArray();
+            if (reducers.Length != 1)
+            {
+                error(
+                    $"{table}: {type} has no [Reducer] method named {localReducer}. Set Outbox to the class declaring the reducer, and OutboxReducer to nameof(that reducer)."
+                );
+                return null;
+            }
+            var method = reducers[0];
+            var kind = method
+                .GetAttributes()
+                .First(a => a.AttributeClass?.ToString() == typeof(ReducerAttribute).FullName)
+                .ParseAs<ReducerAttribute>()
+                .Kind;
+            if (kind != ReducerKind.UserDefined)
+            {
+                error(
+                    $"{table}: {localReducer} is a lifecycle reducer, so an outbox can't call it."
+                );
+                return null;
+            }
+            // The reducer reports its own error if it doesn't take a ReducerContext first.
+            // ReducerContext is generated, so it can be an error type here; match its name.
+            if (method.Parameters.FirstOrDefault()?.Type.Name != "ReducerContext")
+            {
+                return null;
+            }
+            return new(
+                // The host matches the source name: the method name, even with [Reducer(Name)].
+                method.Name,
+                null,
+                "SpacetimeDB.Identity",
+                // Callers that need the symbol look it up in their compilation.
+                null,
+                method
+                    .Parameters.Skip(1)
+                    .Select(p => new ReceiverParameter(p.Name, p.Type, p, IsLocal: true))
+                    .ToImmutableArray()
+            );
+        }
+
+        string? Constant(string name) =>
+            type.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault()
+                is { IsConst: true, ConstantValue: string value }
+                ? value
+                : null;
+        if (
+            !IsReceiver(type)
+            || Constant("ReducerName") is not { } reducerName
+            || Constant("SignatureHash") is not { Length: 64 } signatureHash
+            || !signatureHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
+        )
+        {
+            error(
+                $"{table}: Outbox type {type} is not a reducer from receiver bindings. Generate them with `spacetime generate --bindings module` and use one of their `Reducers` classes, or set OutboxReducer to call a reducer of this module."
+            );
+            return null;
+        }
+        return new(
+            reducerName,
+            signatureHash,
+            $"{SymbolToName(type.ContainingNamespace)}.Identity",
+            type.ContainingNamespace.GetTypeMembers("Identity").FirstOrDefault(),
+            type.GetMembers()
+                .OfType<IFieldSymbol>()
+                .Where(f => !f.IsConst && !f.IsStatic && !f.IsImplicitlyDeclared)
+                .Select(f => new ReceiverParameter(f.Name, f.Type, f, IsLocal: false))
+                .ToImmutableArray()
+        );
+    }
+
+    /// <summary>
+    /// Validates an outbox table against its receiver reducer, and matches the reducer's
+    /// parameters to columns. Reports every problem.
     /// </summary>
     private OutboxInfo? ResolveOutbox(
         TableDeclaration table,
-        INamedTypeSymbol receiver,
+        INamedTypeSymbol receiverType,
+        string? localReducer,
         bool scheduled,
         AttributeData data,
         DiagReporter diag
@@ -481,23 +632,11 @@ record TableAccessor
             diag.Report(ErrorDescriptor.InvalidOutboxDeclaration, (data, message));
         }
 
-        string? Constant(string name) =>
-            receiver.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault()
-                is { IsConst: true, ConstantValue: string value }
-                ? value
-                : null;
-        if (
-            !IsReceiver(receiver)
-            || Constant("ReducerName") is not { } reducerName
-            || Constant("SignatureHash") is not { Length: 64 } signatureHash
-            || !signatureHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
-        )
+        if (ResolveReceiver(Name, receiverType, localReducer, Error) is not { } receiver)
         {
-            Error(
-                $"{Name}: Outbox type {receiver} is not a reducer from receiver bindings. Generate them with `spacetime generate --bindings module` and use one of their `Reducers` classes."
-            );
             return null;
         }
+        var reducerName = receiver.ReducerName;
 
         if (IsEvent)
         {
@@ -518,7 +657,7 @@ record TableAccessor
             Error($"{Name} is an outbox table, so it needs a [PrimaryKey, AutoInc] ulong column.");
         }
 
-        var identity = $"{SymbolToName(receiver.ContainingNamespace)}.Identity";
+        var identity = receiver.IdentityName;
         var targets = table
             .Members.Where(m => m.OutboxAttrs.Any(a => a.Param is null && a.AppliesTo(Name)))
             .ToArray();
@@ -535,7 +674,7 @@ record TableAccessor
             );
         }
 
-        var parameters = ReceiverParameters(receiver).ToArray();
+        var parameters = receiver.Parameters;
         // The name each column answers to: its [Param] for this table, else its snake_case name.
         var columnNames = new string[table.Members.Length];
         for (var i = 0; i < columnNames.Length; i++)
@@ -553,7 +692,7 @@ record TableAccessor
                 );
             }
             var explicitName = explicitNames.FirstOrDefault();
-            if (explicitName is not null && parameters.All(p => p.Name != explicitName))
+            if (explicitName is not null && !parameters.Any(p => p.Matches(explicitName)))
             {
                 Error(
                     $"{Name}.{member.Name} is marked [Param(\"{explicitName}\")], but {reducerName} has no parameter named `{explicitName}`."
@@ -567,7 +706,7 @@ record TableAccessor
         {
             var matches = Enumerable
                 .Range(0, columnNames.Length)
-                .Where(i => columnNames[i] == parameter.Name)
+                .Where(i => parameter.Matches(columnNames[i]))
                 .ToArray();
             var parameterType = SymbolToName(parameter.Type);
             if (matches.Length == 0)
@@ -595,7 +734,12 @@ record TableAccessor
         }
 
         return errors == 0
-            ? new(reducerName, signatureHash, targets[0].ColumnIndex, new(argColumns.ToImmutable()))
+            ? new(
+                reducerName,
+                receiver.SignatureHash,
+                targets[0].ColumnIndex,
+                new(argColumns.ToImmutable())
+            )
             : null;
     }
 }
@@ -984,7 +1128,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// </summary>
     private ImmutableArray<ColumnDeclaration>? GenerateOutboxColumns(
         INamedTypeSymbol row,
-        INamedTypeSymbol receiver,
+        INamedTypeSymbol receiverType,
         AttributeData outbox,
         Compilation compilation,
         DiagReporter diag
@@ -992,8 +1136,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     {
         // An invalid receiver gets no columns; the outbox validation reports it.
         if (
-            !TableAccessor.IsReceiver(receiver)
-            || receiver.ContainingNamespace.GetTypeMembers("Identity").FirstOrDefault()
+            TableAccessor.ResolveReceiver(
+                row.Name,
+                receiverType,
+                outbox.ParseAs<OutboxAttribute>().ReducerName,
+                _ => { }
+            )
+                is not { } receiver
+            || (receiver.Identity ?? compilation.GetTypeByMetadataName(receiver.IdentityName))
                 is not { } identity
         )
         {
@@ -1022,7 +1172,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
             var forParameter = parameter is null
                 ? ""
-                : $" for parameter `{parameter}` of {receiver.Name}";
+                : $" for parameter `{parameter}` of {receiver.ReducerName}";
             diag.Report(
                 ErrorDescriptor.InvalidOutboxDeclaration,
                 (
@@ -1046,7 +1196,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         {
             return null;
         }
-        foreach (var parameter in TableAccessor.ReceiverParameters(receiver))
+        foreach (var parameter in receiver.Parameters)
         {
             var name = string.Concat(
                 parameter
@@ -1060,7 +1210,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     parameter.Type,
                     ColumnAttrs.UnSet,
                     new(null, parameter.Name),
-                    parameter,
+                    parameter.Symbol,
                     parameter.Name
                 )
             )
