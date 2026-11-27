@@ -2,8 +2,10 @@ namespace SpacetimeDB.Internal;
 
 using System;
 using System.IO;
-using System.Text;
 using SpacetimeDB.BSATN;
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+using System.Text;
+#endif
 
 /// <summary>
 /// Represents a procedure that can be registered and invoked by the module runtime.
@@ -27,8 +29,14 @@ public interface IProcedureContext
     /// <returns>The identity of the caller.</returns>
     public static Identity GetIdentity()
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new NotSupportedException(
+            "Static procedure identity lookup is unavailable in managed module tests. Use the fixture's DatabaseIdentity or the context's Sender."
+        );
+#else
         FFI.identity(out var identity);
         return identity;
+#endif
     }
 }
 
@@ -51,6 +59,11 @@ public static class ProcedureExtensions
     /// </summary>
     public static void VolatileNonatomicScheduleImmediate(string name, MemoryStream args)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
+        );
+#else
         var name_bytes = Encoding.UTF8.GetBytes(name);
         var args_bytes = args.ToArray();
 
@@ -68,5 +81,6 @@ public static class ProcedureExtensions
             Log.Error($"Failed to schedule procedure {name}: {ex}");
             throw;
         }
+#endif
     }
 }

@@ -11,7 +11,9 @@ use spacetimedb::error::DatastoreError;
 use spacetimedb::host::idc_actor::{self, IdcConfig};
 use spacetimedb::host::ModuleHost;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
-use spacetimedb_datastore::system_tables::{StOutboundMsgRow, StOutboundStreamRow, ST_OUTBOUND_STREAM_ID};
+use spacetimedb_datastore::system_tables::{
+    StInboundMsgResultStatus, StOutboundMsgRow, StOutboundStreamRow, ST_OUTBOUND_STREAM_ID,
+};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::Identity;
@@ -573,8 +575,9 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
         assert!(requests_rx.try_recv().is_err());
     }
 
-    // A failed attempt remains pending. Restart retries it; a successful attempt
-    // finishes local cleanup before shutdown returns, leaving the next row pending.
+    // Both messages are in flight at once. A failed attempt remains pending, and
+    // restart sends it again. A successful attempt stores its result before shutdown
+    // returns, but shutdown does not start cleanup.
     for status in [StatusCode::SERVICE_UNAVAILABLE, StatusCode::OK] {
         let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
         let _actor = starter.start(
@@ -584,9 +587,15 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
             config.clone(),
             host.downgrade(),
         )?;
-        let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
-        connections.insert(peer);
-        assert_eq!(seq, first.seq);
+        let mut replies = Vec::new();
+        let mut seqs = HashSet::new();
+        for _ in 0..2 {
+            let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+            connections.insert(peer);
+            seqs.insert(seq);
+            replies.push(reply);
+        }
+        assert_eq!(seqs, HashSet::from([first.seq, second.seq]));
         {
             // ModuleHost::exit signals closure through its sender and waits for
             // completion. Multiple waiters must all observe the completed drain.
@@ -598,9 +607,11 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
                 tokio::time::timeout(Duration::from_millis(50), shutdown.as_mut())
                     .await
                     .is_err(),
-                "shutdown returned before the active HTTP request completed"
+                "shutdown returned before the active HTTP requests completed"
             );
-            reply.send(status).unwrap();
+            for reply in replies {
+                reply.send(status).unwrap();
+            }
             tokio::time::timeout(TEST_TIMEOUT, shutdown).await?;
         }
         // Repeated shutdown is harmless.
@@ -611,26 +622,27 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
             "shutdown must not dispatch another attempt"
         );
         let tx = db.begin_tx(Workload::Internal);
-        let stream = db.st_outbound_stream_by_id(&tx, first.stream_id)?.unwrap();
-        if status == StatusCode::OK {
-            assert_eq!(stream.ack_prefix, first.seq);
-            assert!(db
-                .outbound_msg_by_stream_seq(&tx, first.stream_id, first.seq)?
-                .is_none());
-        } else {
-            assert_eq!(stream.ack_prefix, 0);
-            let row = db.outbound_msg_by_stream_seq(&tx, first.stream_id, first.seq)?.unwrap();
+        assert_eq!(
+            db.st_outbound_stream_by_id(&tx, first.stream_id)?.unwrap().ack_prefix,
+            0
+        );
+        for message in [&first, &second] {
+            let row = db
+                .outbound_msg_by_stream_seq(&tx, message.stream_id, message.seq)?
+                .unwrap();
             let row = StOutboundMsgRow::try_from(row)?;
             assert_eq!(row.retry_count, 1);
-            assert!(row.result_status.is_none());
+            assert_eq!(row.result_status.is_some(), status == StatusCode::OK);
         }
-        assert!(db
-            .outbound_msg_by_stream_seq(&tx, second.stream_id, second.seq)?
-            .is_some());
         let _ = db.release_tx(tx);
     }
+    assert_eq!(
+        connections.len(),
+        1,
+        "replacement actors must reuse the HTTP/2 connection"
+    );
 
-    // Startup discovers the untouched second message without a notification.
+    // Startup cleans up stored results in order without sending them again.
     let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
     let _actor = starter.start(
         db.clone(),
@@ -639,19 +651,198 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
         config,
         host.downgrade(),
     )?;
-    let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
-    connections.insert(peer);
-    assert_eq!(
-        connections.len(),
-        1,
-        "replacement actors must reuse the HTTP/2 connection"
-    );
-    assert_eq!(seq, second.seq);
-    reply.send(StatusCode::OK).unwrap();
     wait_for_ack(&db, SLOW_TARGET, second.seq).await?;
+    assert!(requests_rx.try_recv().is_err(), "stored results must not be sent again");
     notify_tx.close();
     tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
     tokio::time::timeout(TEST_TIMEOUT, host.exit()).await?;
     tokio::time::timeout(TEST_TIMEOUT, host.exited()).await?;
     Ok(())
+}
+
+/// Later messages go out while an earlier one waits, but cleanup still follows
+/// sequence order. A lost reply for the first message holds back only cleanup.
+#[test]
+#[serial_test::serial]
+fn idc_actor_pipelines_deliveries_and_retires_in_order() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |module| async move {
+            run_pipeline_test(module.client.module()).await.unwrap();
+        },
+    );
+}
+
+async fn run_pipeline_test(host: ModuleHost) -> anyhow::Result<()> {
+    let mut receiver = ManualReceiver::start(&host, 3).await?;
+    let messages = receiver.messages.clone();
+
+    // All three are sent before any reply arrives.
+    let mut replies = receiver.all_requests().await?;
+    for message in &messages[1..] {
+        replies.remove(&message.seq).unwrap().send(StatusCode::OK).unwrap();
+    }
+    // The first message's reply is lost, so later results wait to be cleaned up.
+    replies
+        .remove(&messages[0].seq)
+        .unwrap()
+        .send(StatusCode::SERVICE_UNAVAILABLE)
+        .unwrap();
+    let (seq, reply) = receiver.next_request().await?;
+    assert_eq!(seq, messages[0].seq, "only the failed message is sent again");
+    assert_eq!(receiver.ack_prefix()?, 0);
+    for message in &messages[1..] {
+        assert_eq!(receiver.result(message)?, Some(StInboundMsgResultStatus::Ok));
+    }
+
+    reply.send(StatusCode::OK).unwrap();
+    wait_for_ack(&receiver.db, SLOW_TARGET, messages[2].seq).await?;
+    receiver.finish("delivered messages must not be sent again").await
+}
+
+/// A terminal error is a result, not a failed attempt. It waits for earlier
+/// messages to retire and is never sent again.
+#[test]
+#[serial_test::serial]
+fn idc_actor_retires_terminal_errors_in_order() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |module| async move {
+            run_terminal_error_test(module.client.module()).await.unwrap();
+        },
+    );
+}
+
+async fn run_terminal_error_test(host: ModuleHost) -> anyhow::Result<()> {
+    let mut receiver = ManualReceiver::start(&host, 3).await?;
+    let messages = receiver.messages.clone();
+
+    // Later messages finish first: a terminal error, then a success.
+    let mut replies = receiver.all_requests().await?;
+    replies
+        .remove(&messages[1].seq)
+        .unwrap()
+        .send(StatusCode::UNPROCESSABLE_ENTITY)
+        .unwrap();
+    replies.remove(&messages[2].seq).unwrap().send(StatusCode::OK).unwrap();
+    for (message, status) in [
+        (&messages[1], StInboundMsgResultStatus::Err),
+        (&messages[2], StInboundMsgResultStatus::Ok),
+    ] {
+        tokio::time::timeout(TEST_TIMEOUT, async {
+            while receiver.result(message).unwrap().is_none() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        assert_eq!(receiver.result(message)?, Some(status));
+    }
+    // Neither can retire before the first message.
+    assert_eq!(receiver.ack_prefix()?, 0);
+
+    replies.remove(&messages[0].seq).unwrap().send(StatusCode::OK).unwrap();
+    wait_for_ack(&receiver.db, SLOW_TARGET, messages[2].seq).await?;
+    receiver.finish("a terminal error must not be sent again").await
+}
+
+type Reply = tokio::sync::oneshot::Sender<StatusCode>;
+
+/// A sender actor delivering to a stub that holds each request until the test replies.
+struct ManualReceiver {
+    db: Arc<RelationalDB>,
+    messages: Vec<StOutboundMsgRow>,
+    requests: mpsc::UnboundedReceiver<(u64, Reply)>,
+    notify_tx: idc_actor::IdcActorSender,
+    _actor: idc_actor::IdcActor,
+    server: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+impl ManualReceiver {
+    /// Insert `count` messages to [`SLOW_TARGET`] and start the actor.
+    async fn start(host: &ModuleHost, count: usize) -> anyhow::Result<Self> {
+        let (requests_tx, requests) = mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/v1/database/:target_db/call-from-database/:reducer",
+            post(move |Query(query): Query<DeliveryQuery>| {
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<StatusCode>();
+                requests_tx.send((query.seq, reply_tx)).unwrap();
+                async move { reply_rx.await.unwrap() }
+            }),
+        );
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        let config = IdcConfig {
+            http_port: listener.local_addr()?.port(),
+            token_signer: Arc::new(spacetimedb::auth::JwtKeys::generate()?.private),
+        };
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let db = host.relational_db().clone();
+        let table_id = create_outbox(&db)?;
+        let messages = (0..count)
+            .map(|_| insert_outbox_row(&db, table_id, SLOW_TARGET))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
+        let actor = starter.start(
+            db.clone(),
+            host.info.database_identity,
+            idc_actor::http_client(),
+            config,
+            host.downgrade(),
+        )?;
+        Ok(Self {
+            db,
+            messages,
+            requests,
+            notify_tx,
+            _actor: actor,
+            server,
+        })
+    }
+
+    async fn next_request(&mut self) -> anyhow::Result<(u64, Reply)> {
+        Ok(tokio::time::timeout(TEST_TIMEOUT, self.requests.recv()).await?.unwrap())
+    }
+
+    /// Receive one request per message, keyed by sequence.
+    async fn all_requests(&mut self) -> anyhow::Result<std::collections::HashMap<u64, Reply>> {
+        let mut replies = std::collections::HashMap::new();
+        for _ in 0..self.messages.len() {
+            let (seq, reply) = self.next_request().await?;
+            replies.insert(seq, reply);
+        }
+        Ok(replies)
+    }
+
+    fn ack_prefix(&self) -> anyhow::Result<u64> {
+        let tx = self.db.begin_tx(Workload::Internal);
+        let stream = self.db.st_outbound_stream_by_id(&tx, self.messages[0].stream_id)?;
+        let _ = self.db.release_tx(tx);
+        Ok(stream.unwrap().ack_prefix)
+    }
+
+    /// The result the sender stored for `message`, if any.
+    fn result(&self, message: &StOutboundMsgRow) -> anyhow::Result<Option<StInboundMsgResultStatus>> {
+        let tx = self.db.begin_tx(Workload::Internal);
+        let row = self
+            .db
+            .outbound_msg_by_stream_seq(&tx, message.stream_id, message.seq)?
+            .unwrap();
+        let status = StOutboundMsgRow::try_from(row)?.result_status;
+        let _ = self.db.release_tx(tx);
+        Ok(status)
+    }
+
+    /// Check that nothing else was sent, then stop the actor.
+    async fn finish(mut self, unexpected_request: &str) -> anyhow::Result<()> {
+        assert!(self.requests.try_recv().is_err(), "{unexpected_request}");
+        self.notify_tx.close();
+        tokio::time::timeout(TEST_TIMEOUT, self.notify_tx.closed()).await?;
+        Ok(())
+    }
+}
+
+impl Drop for ManualReceiver {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
 }

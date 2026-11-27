@@ -1,5 +1,8 @@
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::util::{collect_case, dependency_scoped_type_name, iter_reducers, print_lines, type_ref_name};
+use super::util::{
+    collect_case, dependency_scoped_type_name, iter_reducers, module_binding_reducer_type_refs, print_lines,
+    reducer_signature_hash, type_ref_name,
+};
 use super::Lang;
 use crate::util::{
     is_parameterized_view, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types,
@@ -1420,35 +1423,6 @@ fn iter_module_binding_types<'a>(
     iter_types(module).filter(move |typ| type_refs.contains(&typ.ty))
 }
 
-fn module_binding_reducer_type_refs(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {
-    let mut pending = Vec::new();
-    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
-        for (_, ty) in &reducer.params_for_generate.elements {
-            ty.for_each_ref(|reference| pending.push(reference));
-        }
-    }
-    let mut type_refs = BTreeSet::new();
-    while let Some(reference) = pending.pop() {
-        if !type_refs.insert(reference) {
-            continue;
-        }
-        match &module.typespace_for_generate()[reference] {
-            AlgebraicTypeDef::Product(product) => {
-                for (_, ty) in &product.elements {
-                    ty.for_each_ref(|nested| pending.push(nested));
-                }
-            }
-            AlgebraicTypeDef::Sum(sum) => {
-                for (_, ty) in &sum.variants {
-                    ty.for_each_ref(|nested| pending.push(nested));
-                }
-            }
-            AlgebraicTypeDef::PlainEnum(_) => {}
-        }
-    }
-    type_refs
-}
-
 fn print_module_binding_identity(out: &mut Indenter) {
     writeln!(
         out,
@@ -1635,17 +1609,6 @@ macro_rules! __spacetimedb_outbox {{"#
 #[doc(hidden)]
 pub(crate) use __spacetimedb_outbox;"#
     );
-}
-
-fn reducer_signature_hash(module: &ModuleDef, reducer: &ReducerDef) -> String {
-    spacetimedb_schema::def::reducer_signature_hash(
-        &reducer.params(),
-        &reducer.ok_return_type,
-        &reducer.err_return_type,
-        module.typespace(),
-    )
-    .to_hex()
-    .to_string()
 }
 
 fn rust_string_literal(value: &str) -> String {

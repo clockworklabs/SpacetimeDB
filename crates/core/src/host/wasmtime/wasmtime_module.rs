@@ -26,7 +26,7 @@ use wasmtime::{
     WasmParams, WasmResults,
 };
 
-fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
+fn log_traceback(func_type: &str, func: &str, e: &anyhow::Error) {
     log::info!("{func_type} \"{func}\" runtime error: {e}");
     if let Some(bt) = e.downcast_ref::<WasmBacktrace>() {
         let frames_len = bt.frames().len();
@@ -130,8 +130,8 @@ fn link_sync_stub_for_async_function(
     Ok(())
 }
 
-fn procedure_sleep_until_sync_stub(_: Caller<'_, WasmInstanceEnv>, _: i64) -> anyhow::Result<i64> {
-    anyhow::bail!("procedure_sleep_until is only available in async instances")
+fn procedure_sleep_until_sync_stub(_: Caller<'_, WasmInstanceEnv>, _: i64) -> wasmtime::Result<i64> {
+    wasmtime::bail!("procedure_sleep_until is only available in async instances")
 }
 
 fn procedure_http_request_sync_stub(
@@ -141,8 +141,8 @@ fn procedure_http_request_sync_stub(
     _: u32,
     _: u32,
     _: u32,
-) -> anyhow::Result<u32> {
-    anyhow::bail!("procedure_http_request is only available in async instances")
+) -> wasmtime::Result<u32> {
+    wasmtime::bail!("procedure_http_request is only available in async instances")
 }
 
 macro_rules! impl_wasmtime_module {
@@ -238,8 +238,9 @@ where
         let fut = typed_func.call_async(ctx.as_context_mut(), args);
         fut.now_or_never()
             .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
+            .map_err(Into::into)
     } else {
-        typed_func.call(ctx.as_context_mut(), args)
+        typed_func.call(ctx.as_context_mut(), args).map_err(Into::into)
     }
 }
 
@@ -323,7 +324,9 @@ fn instantiate_sync(
     module: &InstancePre<WasmInstanceEnv>,
     store: &mut Store<WasmInstanceEnv>,
 ) -> Result<Instance, InitializationError> {
-    module.instantiate(store).map_err(InitializationError::Instantiation)
+    module
+        .instantiate(store)
+        .map_err(|e| InitializationError::Instantiation(e.into()))
 }
 
 fn instantiate_async(
@@ -334,7 +337,7 @@ fn instantiate_async(
     instance_fut
         .now_or_never()
         .expect("`instantiate_async` did not immediately return `Ready`")
-        .map_err(InitializationError::Instantiation)
+        .map_err(|e| InitializationError::Instantiation(e.into()))
 }
 
 fn instantiate_wasmtime_instance(
@@ -350,11 +353,8 @@ fn instantiate_wasmtime_instance(
     let env = WasmInstanceEnv::new(env);
     let mut store = Store::new(module.module().engine(), env);
 
-    let instance = instantiate(module, &mut store)?;
-
-    let mem = Mem::extract(&instance, &mut store).unwrap();
-    store.data_mut().instantiate(mem);
-
+    // Since Wasmtime 48, instantiation checks fuel and the epoch deadline, so both must be set
+    // first: a new store has no fuel, and its deadline has already passed.
     store.epoch_deadline_callback(|store| {
         let env = store.data();
         let database = env.instance_env().replica_ctx.database_identity;
@@ -366,9 +366,14 @@ fn instantiate_wasmtime_instance(
         Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
     });
 
-    // Note: this budget is just for initializers
+    // Note: this budget is just for instantiation and initializers
     set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
     store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+
+    let instance = instantiate(module, &mut store)?;
+
+    let mem = Mem::extract(&instance, &mut store).unwrap();
+    store.data_mut().instantiate(mem);
 
     // NativeAOT-LLVM modules are WASI reactors that export `_initialize`
     // to set up the native runtime. This must be called before any other exports.
@@ -643,7 +648,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let describer = self
             .instance
             .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
-            .map_err(DescribeError::Signature)?;
+            .map_err(|e| DescribeError::Signature(e.into()))?;
 
         let sink = self.store.data_mut().create_bytes_sink();
 
@@ -850,7 +855,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Close the timing span for this procedure and get the BSATN bytes of its result.
         let (stats, result_bytes) = finish_opcall(store, budget, result_sink);
 
-        let call_result = call_result.and_then(|code| {
+        let call_result = call_result.map_err(anyhow::Error::from).and_then(|code| {
             (code == 0).then_some(result_bytes.into()).ok_or_else(|| {
                 anyhow::anyhow!(
                     "{CALL_PROCEDURE_DUNDER} returned unexpected code {code}. Procedures should return code 0 or trap."
@@ -948,7 +953,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (stats, result_bytes, response_body_bytes) =
             finish_http_handler_opcall(store, budget, response_sink, response_body_sink);
 
-        let call_result = call_result.and_then(|code| {
+        let call_result = call_result.map_err(anyhow::Error::from).and_then(|code| {
             (code == 0)
                 .then_some((result_bytes.into(), response_body_bytes.into()))
                 .ok_or_else(|| {
