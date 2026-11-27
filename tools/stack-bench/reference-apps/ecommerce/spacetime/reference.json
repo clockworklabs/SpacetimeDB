@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "spacetime",
+  "frozenLock": false,
+  "installDirectories": ["backend/spacetimedb", "client"],
+  "moduleDirectory": "backend/spacetimedb",
+  "bindingsDirectory": "client/src/module_bindings",
+  "client": { "directory": "client", "script": "dev", "port": 6473 },
+  "requiredEnvironment": ["SPACETIMEDB_MODULE", "SPACETIMEDB_URI", "APP_PORT"]
+}

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Progression signed-out purchase access",
+  "note": "Draft: wait for the signed-in native order and drain writes captured during the guest click and its existing settle interval before reload. Affected qualification is pending; first dispatch after capture closes is outside this bounded observation.",
+  "features": [
+    {
+      "id": 3,
+      "name": "Buying",
+      "actors": ["buyer", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "signed-in-buyer" },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Keyboard" },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
+      ],
+      "criteria": [
+        {
+          "id": "3a",
+          "category": "production",
+          "desc": "using the purchase control while signed out does not buy an item",
+          "points": 1,
+          "statedBy": "Unauthenticated callers cannot purchase.",
+          "steps": [
+            { "do": "recordNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "keyboard-before-buyer" },
+            { "do": "dbRecordCheckout", "account": "{user:signed-in-buyer}", "item": "Keyboard", "as": "buyer-orders", "storage": { "kind": "order-data", "cart": false, "warehouses": false } },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+            { "do": "dbExpectPurchaseCount", "before": ["buyer-orders"], "purchasesEach": 1, "within": 10000 },
+            { "do": "reload", "actor": "visitor", "settleMs": 2000 },
+            { "do": "click", "actor": "visitor", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "keyboard-before-buyer", "plus": -1 },
+            { "do": "recordNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "keyboard-before-guest" },
+            { "do": "click", "actor": "visitor", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" }, "ifAvailable": true, "settleMs": 1500, "awaitWrites": true },
+            { "do": "reload", "actor": "visitor", "settleMs": 2000 },
+            { "do": "click", "actor": "visitor", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "keyboard-before-guest", "plus": 0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

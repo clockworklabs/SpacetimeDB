@@ -67,12 +67,14 @@ const entity = table(
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
-    active: t.bool(),
+    active: t.bool().index('btree'),
   }
 );
 ```
 
 Options: `name` (snake_case, recommended), `public: true`, `event: true`, `indexes: [...]`
+
+Tables are private by default: clients cannot subscribe to or query them, while reducers, views and the database owner can read them. `public: true` lets every client subscribe to all of a table's rows.
 
 `ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ scoreRecord })` -> `ctx.db.scoreRecord`. Keep TypeScript identifiers and accessors camelCase. Use explicit `name: 'snake_case'` strings when you need a canonical database name that differs from the TypeScript identifier.
 
@@ -97,6 +99,10 @@ Every column is a `t` builder value:
 | `t.scheduleAt()` | ScheduleAt | |
 
 Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
+
+`.primaryKey()`, `.unique()` and table `constraints` apply to one column. A
+multi-column index does not enforce uniqueness, so uniqueness across columns is
+up to reducer code.
 
 Use `.default(value)` only for a newly appended migration-safe field. Do not put defaults on primary-key, unique, or auto-increment columns.
 
@@ -130,7 +136,9 @@ export { default } from './schema';   // re-export the schema for the module ent
 
 ## Reducers
 
-Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name:
+Reducers are created with `spacetimedb.reducer(...)`. By default, an exported
+`signUp` becomes `signUp` in generated clients and `sign_up` in `spacetime call`
+and `describe`:
 
 ```typescript
 export const createEntity = spacetimedb.reducer(
@@ -145,6 +153,8 @@ export const doReset = spacetimedb.reducer((ctx) => { ... });
 ```
 
 Reducer args accept any column type, including arrays of custom types: `{ splits: t.array(Split) }`. Do not pass JSON strings for structured data.
+
+A reducer's arguments are written to the commit log with its caller and timestamp, and stay in the database's history.
 
 ## DB Operations
 
@@ -178,9 +188,19 @@ export const onConnect = spacetimedb.clientConnected((ctx) => { ... });
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 ```
 
-`ctx.connectionId` is `ConnectionId | null`, including in lifecycle contexts. Guard it before passing it to a helper or using it as a table key.
+Connection hooks run once per connection, including the temporary connection behind each
+HTTP reducer call. `ctx.connectionId` identifies that connection. `ctx.sender` identifies
+the authenticated caller and stays the same across disconnects and reconnects until the
+client discards its token.
+
+`ctx.connectionId` is typed `ConnectionId | null`. It is present inside connection lifecycle hooks and reducers invoked over a connection, and `null` in `init` and scheduled reducers. Guard it before passing it to a helper or using it as a table key.
 
 ## Reducer Context API
+
+Each reducer call runs in one database transaction. An error that escapes the
+reducer rolls back its database changes. Table visibility, views and client
+visibility filters control what clients can read; they do not restrict which
+reducers a client can call.
 
 `ctx` is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules. Let exported callbacks infer their context type. In helpers, use `ReducerCtx<InferSchema<typeof spacetimedb>>`; do not annotate a context as `any`, because that erases table row types and can make `bigint` expressions infer as `number`.
 
@@ -383,8 +403,21 @@ const Shape = t.enum('Shape', {
 A client subscribing to a view receives only the rows it returns. Use a per-user view
 (keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
 (e.g. a membership row) automatically drops the rows it was exposing from that client.
+Use index accessors in views. Do not scan a whole table with `.iter()` when an
+indexed lookup can select the required rows.
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
+
+A view context is `ViewCtx<S>`, or `AnonymousViewCtx<S>` in an anonymous view,
+both exported from `spacetimedb/server`. Both carry a read-only `db`, `env` and
+`from`; only `ViewCtx` carries `sender`. Neither is a `ReducerCtx`, so a helper
+shared between a reducer and a view must accept either:
+
+```typescript
+import type { ReducerCtx, ViewCtx, InferSchema } from 'spacetimedb/server';
+type S = InferSchema<typeof spacetimedb>;
+function stockOf(ctx: ReducerCtx<S> | ViewCtx<S>, itemId: bigint) { ... }
+```
 
 Without parameters, `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take view options, a return schema, and a callback. Parameterized views add an argument-schema object before the return schema.
 
@@ -393,7 +426,7 @@ Without parameters, `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)`
 export const activeUsers = spacetimedb.anonymousView(
   { name: 'active_users', public: true },
   t.array(entity.rowType),
-  (ctx) => [...ctx.db.entity.iter()].filter(e => e.active)
+  (ctx) => [...ctx.db.entity.active.filter(true)]
 );
 
 // Per-user view (varies by ctx.sender):
@@ -442,6 +475,9 @@ Floating-point arguments are rejected. Views with arguments have no primary key;
 
 ## Client Visibility Filters
 
+Client visibility filters are experimental and may change or be removed. Use views for access
+control. `:sender` is the requesting client's identity.
+
 ```typescript
 export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
   'SELECT * FROM owned_row WHERE owner = :sender'
@@ -471,6 +507,8 @@ TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-
 `t.array(t.u8())` values are `number[]`. Convert one to `new Uint8Array(value)` before using it as a binary request body.
 
 Procedures and handlers open short database transactions with `ctx.withTx(tx => ...)`. Perform network I/O before opening the transaction; only database work belongs inside its callback.
+
+A procedure's arguments are not written to the commit log. Rows it writes with `ctx.withTx` are.
 
 Scheduled procedures use the same `onSchedule` binding as scheduled reducers. The procedure must be exported, return `t.unit()`, and accept the scheduled row as its argument.
 
