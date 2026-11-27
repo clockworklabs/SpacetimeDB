@@ -170,6 +170,27 @@ const spacetimedb = schema({
 });
 ```
 
+Inside a TypeScript submodule view, `ctx.from` uses the library's local schema keys, just like `ctx.db`, even when a table has an explicit canonical `name`. For example, the library can export:
+
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+const sessions = table(
+  { name: 'auth_sessions', public: true },
+  { id: t.u64().primaryKey().autoInc() },
+);
+const authSchema = schema({ sessions });
+export default authSchema;
+
+export const allSessions = authSchema.anonymousView(
+  { public: true },
+  t.array(sessions.rowType),
+  ctx => ctx.from.sessions,
+);
+```
+
+Mount the full library namespace under `myAuth` as above. The view still uses `ctx.from.sessions`, not `ctx.from.auth_sessions` or a consumer namespace prefix. The query builder qualifies the table for the mount automatically. When writing raw SQL, use the complete canonical path instead; do not combine an accessor namespace with a canonical table name.
+
 :::warning Changing a canonical namespace re-creates its tables
 The canonical namespace is part of every table's identity. Publishing a module whose namespace canonicalizes differently than before, for example after renaming the key from `myauth` to `myAuth` without a `name`, is a migration that removes the tables under the old namespace and creates empty ones under the new namespace. To rename the key without touching the tables, pin the canonical name with `name`: changing only the key while keeping the same `name` only updates the accessor aliases.
 :::
