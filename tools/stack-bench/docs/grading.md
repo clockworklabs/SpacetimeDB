@@ -68,7 +68,9 @@ and unmeasured work:
 
 - **Check completion**: passed checks over selected point-scoring checks.
 - **Feature completion**: fully passed features over selected features. A
-  feature with a failed production check is not complete.
+  feature with a failed production check is not complete. A production check
+  that needs another feature, such as purchasing, is not measured while that
+  feature fails, so its own feature is not complete either.
 - **Weighted score**: passed points over selected points.
 
 Score on the leaderboard is feature completion averaged over valid runs. Checks
