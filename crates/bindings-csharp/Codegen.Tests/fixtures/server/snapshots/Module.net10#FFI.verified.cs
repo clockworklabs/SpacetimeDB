@@ -248,6 +248,107 @@ namespace SpacetimeDB
             new("BTreeViews", new BTreeViewsCols("BTreeViews"), new BTreeViewsIxCols("BTreeViews"));
     }
 
+    public readonly struct LocalPingGeneratedCols
+    {
+        public readonly global::SpacetimeDB.Col<global::LocalPingGeneratedRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<
+            global::LocalPingGeneratedRow,
+            SpacetimeDB.Identity
+        > Target;
+        public readonly global::SpacetimeDB.Col<global::LocalPingGeneratedRow, string> MessageBody;
+        public readonly global::SpacetimeDB.Col<global::LocalPingGeneratedRow, uint> Attempt;
+
+        internal LocalPingGeneratedCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::LocalPingGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+            Target = new global::SpacetimeDB.Col<
+                global::LocalPingGeneratedRow,
+                SpacetimeDB.Identity
+            >(tableName, "Target");
+            MessageBody = new global::SpacetimeDB.Col<global::LocalPingGeneratedRow, string>(
+                tableName,
+                "MessageBody"
+            );
+            Attempt = new global::SpacetimeDB.Col<global::LocalPingGeneratedRow, uint>(
+                tableName,
+                "Attempt"
+            );
+        }
+    }
+
+    public readonly struct LocalPingGeneratedIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::LocalPingGeneratedRow, ulong> MsgId;
+
+        internal LocalPingGeneratedIxCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::LocalPingGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+        }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::LocalPingGeneratedRow,
+            LocalPingGeneratedCols,
+            LocalPingGeneratedIxCols
+        > LocalPingGenerated() =>
+            new(
+                "LocalPingGenerated",
+                new LocalPingGeneratedCols("LocalPingGenerated"),
+                new LocalPingGeneratedIxCols("LocalPingGenerated")
+            );
+    }
+
+    public readonly struct LocalPingOutboxCols
+    {
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, SpacetimeDB.Identity> Target;
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, uint> Attempt;
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, string> Body;
+
+        internal LocalPingOutboxCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::LocalPingRow, ulong>(tableName, "MsgId");
+            Target = new global::SpacetimeDB.Col<global::LocalPingRow, SpacetimeDB.Identity>(
+                tableName,
+                "Target"
+            );
+            Attempt = new global::SpacetimeDB.Col<global::LocalPingRow, uint>(tableName, "Attempt");
+            Body = new global::SpacetimeDB.Col<global::LocalPingRow, string>(tableName, "Body");
+        }
+    }
+
+    public readonly struct LocalPingOutboxIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::LocalPingRow, ulong> MsgId;
+
+        internal LocalPingOutboxIxCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::LocalPingRow, ulong>(tableName, "MsgId");
+        }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::LocalPingRow,
+            LocalPingOutboxCols,
+            LocalPingOutboxIxCols
+        > LocalPingOutbox() =>
+            new(
+                "LocalPingOutbox",
+                new LocalPingOutboxCols("LocalPingOutbox"),
+                new LocalPingOutboxIxCols("LocalPingOutbox")
+            );
+    }
+
     public readonly struct MultiTable1Cols
     {
         public readonly global::SpacetimeDB.Col<global::MultiTableRow, string> Name;
@@ -967,6 +1068,22 @@ namespace SpacetimeDB
                     "BTreeViews"
                 )
             );
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingGenerated LocalPingGenerated =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "LocalPingGenerated"
+                )
+            );
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingOutbox LocalPingOutbox =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "LocalPingOutbox"
+                )
+            );
         public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.MultiTable1 MultiTable1 =>
             new(
                 new global::SpacetimeDB.Internal.TableAccessor(
@@ -1068,8 +1185,9 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
         public const string? CaseConversionPolicy = null;
         public const string RootOnlyDeclarations =
             "row-level security filters, environment variables, lifecycle reducer Timers.Init (Init)";
-        public const string OutboxTables = "AdmitGenerated, AdmitOutbox, PingOutbox";
-        public const int ReducerCount = 8;
+        public const string OutboxTables =
+            "AdmitGenerated, AdmitOutbox, LocalPingGenerated, LocalPingOutbox, PingOutbox";
+        public const int ReducerCount = 11;
         public const int ProcedureCount = 0;
         public const int HttpHandlerCount = 0;
         public const int ViewCount = 2;
@@ -1251,6 +1369,22 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                         "BTreeViews"
                     )
                 );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingGenerated LocalPingGenerated =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingGenerated"
+                    )
+                );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingOutbox LocalPingOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingOutbox"
+                    )
+                );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.MultiTable1 MultiTable1 =>
                 new(
                     new global::SpacetimeDB.Internal.TableAccessor(
@@ -1356,6 +1490,22 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                         __owner,
                         "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         "BTreeViews"
+                    )
+                );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingGeneratedReadOnly LocalPingGenerated =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingGenerated"
+                    )
+                );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingOutboxReadOnly LocalPingOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingOutbox"
                     )
                 );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
@@ -1471,6 +1621,22 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                         "BTreeViews"
                     )
                 );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingGenerated LocalPingGenerated =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingGenerated"
+                    )
+                );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingOutbox LocalPingOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingOutbox"
+                    )
+                );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.MultiTable1 MultiTable1 =>
                 new(
                     new global::SpacetimeDB.Internal.TableAccessor(
@@ -1572,6 +1738,22 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                         db,
                         "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         "BTreeViews"
+                    )
+                );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingGeneratedReadOnly LocalPingGenerated =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingGenerated"
+                    )
+                );
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingOutboxReadOnly LocalPingOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "LocalPingOutbox"
                     )
                 );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
@@ -1956,6 +2138,149 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 BTreeViewsCols,
                 BTreeViewsIxCols
             > BTreeViews() => new AssemblyDescriptor.Queries(from).BTreeViews();
+        }
+    }
+
+    public readonly struct LocalPingGeneratedCols
+    {
+        public readonly global::SpacetimeDB.Col<global::LocalPingGeneratedRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<
+            global::LocalPingGeneratedRow,
+            SpacetimeDB.Identity
+        > Target;
+        public readonly global::SpacetimeDB.Col<global::LocalPingGeneratedRow, string> MessageBody;
+        public readonly global::SpacetimeDB.Col<global::LocalPingGeneratedRow, uint> Attempt;
+
+        internal LocalPingGeneratedCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::LocalPingGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+            Target = new global::SpacetimeDB.Col<
+                global::LocalPingGeneratedRow,
+                SpacetimeDB.Identity
+            >(tableName, "Target");
+            MessageBody = new global::SpacetimeDB.Col<global::LocalPingGeneratedRow, string>(
+                tableName,
+                "MessageBody"
+            );
+            Attempt = new global::SpacetimeDB.Col<global::LocalPingGeneratedRow, uint>(
+                tableName,
+                "Attempt"
+            );
+        }
+    }
+
+    public readonly struct LocalPingGeneratedIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::LocalPingGeneratedRow, ulong> MsgId;
+
+        internal LocalPingGeneratedIxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::LocalPingGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+        }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::LocalPingGeneratedRow,
+                LocalPingGeneratedCols,
+                LocalPingGeneratedIxCols
+            > LocalPingGenerated()
+            {
+                var tableName = __owner.ResolveTableName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "LocalPingGenerated"
+                );
+                return new(
+                    tableName,
+                    new LocalPingGeneratedCols(tableName),
+                    new LocalPingGeneratedIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::LocalPingGeneratedRow,
+                LocalPingGeneratedCols,
+                LocalPingGeneratedIxCols
+            > LocalPingGenerated() => new AssemblyDescriptor.Queries(from).LocalPingGenerated();
+        }
+    }
+
+    public readonly struct LocalPingOutboxCols
+    {
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, SpacetimeDB.Identity> Target;
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, uint> Attempt;
+        public readonly global::SpacetimeDB.Col<global::LocalPingRow, string> Body;
+
+        internal LocalPingOutboxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::LocalPingRow, ulong>(tableName, "MsgId");
+            Target = new global::SpacetimeDB.Col<global::LocalPingRow, SpacetimeDB.Identity>(
+                tableName,
+                "Target"
+            );
+            Attempt = new global::SpacetimeDB.Col<global::LocalPingRow, uint>(tableName, "Attempt");
+            Body = new global::SpacetimeDB.Col<global::LocalPingRow, string>(tableName, "Body");
+        }
+    }
+
+    public readonly struct LocalPingOutboxIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::LocalPingRow, ulong> MsgId;
+
+        internal LocalPingOutboxIxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::LocalPingRow, ulong>(tableName, "MsgId");
+        }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::LocalPingRow,
+                LocalPingOutboxCols,
+                LocalPingOutboxIxCols
+            > LocalPingOutbox()
+            {
+                var tableName = __owner.ResolveTableName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "LocalPingOutbox"
+                );
+                return new(
+                    tableName,
+                    new LocalPingOutboxCols(tableName),
+                    new LocalPingOutboxIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::LocalPingRow,
+                LocalPingOutboxCols,
+                LocalPingOutboxIxCols
+            > LocalPingOutbox() => new AssemblyDescriptor.Queries(from).LocalPingOutbox();
         }
     }
 
@@ -3209,6 +3534,211 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
         }
 
         internal FactionIndex Faction => new(__access);
+    }
+
+    public readonly struct LocalPingGenerated
+        : global::SpacetimeDB.Internal.ITableView<LocalPingGenerated, global::LocalPingGeneratedRow>
+    {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal LocalPingGenerated(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
+        public static global::LocalPingGeneratedRow ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::LocalPingGeneratedRow row
+        )
+        {
+            if (row.MsgId == default)
+            {
+                row.MsgId = global::LocalPingGeneratedRow.BSATN.MsgIdRW.Read(reader);
+            }
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(LocalPingGenerated),
+                ProductTypeRef: (uint)
+                    new global::LocalPingGeneratedRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "LocalPingGenerated_MsgId_idx_btree",
+                        AccessorName: "MsgId",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        LocalPingGenerated,
+                        global::LocalPingGeneratedRow
+                    >.MakeUniqueConstraint(0),
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        LocalPingGenerated,
+                        global::LocalPingGeneratedRow
+                    >.MakeSequence(0),
+                ],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                LocalPingGenerated,
+                global::LocalPingGeneratedRow
+            >.DoCount(__access);
+
+        public IEnumerable<global::LocalPingGeneratedRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                LocalPingGenerated,
+                global::LocalPingGeneratedRow
+            >.DoIter(__access);
+
+        public global::LocalPingGeneratedRow Insert(global::LocalPingGeneratedRow row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                LocalPingGenerated,
+                global::LocalPingGeneratedRow
+            >.DoInsert(__access, row);
+
+        bool global::SpacetimeDB.Internal.ITableView<
+            LocalPingGenerated,
+            global::LocalPingGeneratedRow
+        >.Delete(global::LocalPingGeneratedRow row) =>
+            throw new global::System.NotSupportedException(
+                "Rows can't be deleted from outbox table LocalPingGenerated."
+            );
+
+        ulong global::SpacetimeDB.Internal.ITableView<
+            LocalPingGenerated,
+            global::LocalPingGeneratedRow
+        >.Clear() =>
+            throw new global::System.NotSupportedException(
+                "Outbox table LocalPingGenerated can't be cleared."
+            );
+
+        private global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingGeneratedReadOnly __ReadOnly =>
+            new(__access);
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingGeneratedReadOnly.MsgIdIndex MsgId =>
+            __ReadOnly.MsgId;
+    }
+
+    public readonly struct LocalPingOutbox
+        : global::SpacetimeDB.Internal.ITableView<LocalPingOutbox, global::LocalPingRow>
+    {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal LocalPingOutbox(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
+        public static global::LocalPingRow ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::LocalPingRow row
+        )
+        {
+            if (row.MsgId == default)
+            {
+                row.MsgId = global::LocalPingRow.BSATN.MsgIdRW.Read(reader);
+            }
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(LocalPingOutbox),
+                ProductTypeRef: (uint)
+                    new global::LocalPingRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "LocalPingOutbox_MsgId_idx_btree",
+                        AccessorName: "MsgId",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        LocalPingOutbox,
+                        global::LocalPingRow
+                    >.MakeUniqueConstraint(0),
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        LocalPingOutbox,
+                        global::LocalPingRow
+                    >.MakeSequence(0),
+                ],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<LocalPingOutbox, global::LocalPingRow>.DoCount(
+                __access
+            );
+
+        public IEnumerable<global::LocalPingRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<LocalPingOutbox, global::LocalPingRow>.DoIter(
+                __access
+            );
+
+        public global::LocalPingRow Insert(global::LocalPingRow row) =>
+            global::SpacetimeDB.Internal.ITableView<LocalPingOutbox, global::LocalPingRow>.DoInsert(
+                __access,
+                row
+            );
+
+        bool global::SpacetimeDB.Internal.ITableView<LocalPingOutbox, global::LocalPingRow>.Delete(
+            global::LocalPingRow row
+        ) =>
+            throw new global::System.NotSupportedException(
+                "Rows can't be deleted from outbox table LocalPingOutbox."
+            );
+
+        ulong global::SpacetimeDB.Internal.ITableView<
+            LocalPingOutbox,
+            global::LocalPingRow
+        >.Clear() =>
+            throw new global::System.NotSupportedException(
+                "Outbox table LocalPingOutbox can't be cleared."
+            );
+
+        private global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingOutboxReadOnly __ReadOnly =>
+            new(__access);
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingOutboxReadOnly.MsgIdIndex MsgId =>
+            __ReadOnly.MsgId;
     }
 
     public readonly struct MultiTable1
@@ -4605,6 +5135,68 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
         internal FactionIndex Faction => new(__access);
     }
 
+    public sealed class LocalPingGeneratedReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::LocalPingGeneratedRow>
+    {
+        internal LocalPingGeneratedReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+
+        public sealed class MsgIdIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingGeneratedReadOnly,
+                global::LocalPingGeneratedRow,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal MsgIdIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "LocalPingGenerated_MsgId_idx_btree") { }
+
+            public global::LocalPingGeneratedRow? Find(ulong key) => FindSingle(key);
+        }
+
+        public MsgIdIndex MsgId => new(__access);
+    }
+
+    public sealed class LocalPingOutboxReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::LocalPingRow>
+    {
+        internal LocalPingOutboxReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+
+        public sealed class MsgIdIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingOutboxReadOnly,
+                global::LocalPingRow,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal MsgIdIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "LocalPingOutbox_MsgId_idx_btree") { }
+
+            public global::LocalPingRow? Find(ulong key) => FindSingle(key);
+        }
+
+        public MsgIdIndex MsgId => new(__access);
+    }
+
     public sealed class MultiTable1ReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::MultiTableRow>
     {
@@ -4954,6 +5546,22 @@ namespace SpacetimeDB.Internal
                     "BTreeViews"
                 )
             );
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingGeneratedReadOnly LocalPingGenerated =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "LocalPingGenerated"
+                )
+            );
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.LocalPingOutboxReadOnly LocalPingOutbox =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "LocalPingOutbox"
+                )
+            );
         public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
             new(
                 new global::SpacetimeDB.Internal.TableAccessor(
@@ -5126,6 +5734,41 @@ static class ModuleRegistration
         }
     }
 
+    sealed class OnLocalPingResult : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly LocalPingRow.BSATN rowRW = new();
+        private static readonly SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
+            SpacetimeDB.Unit.BSATN,
+            SpacetimeDB.BSATN.String
+        > resultRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(OnLocalPingResult),
+                Params:
+                [
+                    new("row", rowRW.GetAlgebraicType(registrar)),
+                    new("result", resultRW.GetAlgebraicType(registrar)),
+                ],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            LocalOutboxReducers.OnLocalPingResult(
+                (SpacetimeDB.ReducerContext)ctx,
+                rowRW.Read(reader),
+                resultRW.Read(reader)
+            );
+        }
+    }
+
     sealed class OnPingResult : SpacetimeDB.Internal.IReducer
     {
         private static readonly PingRow.BSATN rowRW = new();
@@ -5161,6 +5804,38 @@ static class ModuleRegistration
         }
     }
 
+    sealed class ReceiveLocalPing : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly SpacetimeDB.BSATN.String messageBodyRW = new();
+        private static readonly SpacetimeDB.BSATN.U32 attemptRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(ReceiveLocalPing),
+                Params:
+                [
+                    new("messageBody", messageBodyRW.GetAlgebraicType(registrar)),
+                    new("attempt", attemptRW.GetAlgebraicType(registrar)),
+                ],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            LocalOutboxReducers.ReceiveLocalPing(
+                (SpacetimeDB.ReducerContext)ctx,
+                messageBodyRW.Read(reader),
+                attemptRW.Read(reader)
+            );
+        }
+    }
+
     sealed class ScheduleImmediate : SpacetimeDB.Internal.IReducer
     {
         private static readonly PublicTable.BSATN dataRW = new();
@@ -5181,6 +5856,27 @@ static class ModuleRegistration
         public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.ScheduleImmediate((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
+        }
+    }
+
+    sealed class SendLocalPing : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(SendLocalPing),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            LocalOutboxReducers.SendLocalPing((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
@@ -5308,6 +6004,7 @@ static class ModuleRegistration
                 false
             )
         );
+        builder.RegisterExplicitFunctionName("ReceiveLocalPing", "AcceptLocalPing");
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 
@@ -5315,8 +6012,11 @@ static class ModuleRegistration
         builder.RegisterReducer<InsertData>();
         builder.RegisterReducer<InsertData2>();
         builder.RegisterReducer<InsertMultiData>();
+        builder.RegisterReducer<OnLocalPingResult>();
         builder.RegisterReducer<OnPingResult>();
+        builder.RegisterReducer<ReceiveLocalPing>();
         builder.RegisterReducer<ScheduleImmediate>();
+        builder.RegisterReducer<SendLocalPing>();
         builder.RegisterReducer<SendOutboxes>();
         builder.RegisterReducer<SendScheduledMessage>();
 
@@ -5342,6 +6042,14 @@ static class ModuleRegistration
         builder.RegisterTable<
             global::BTreeViews,
             global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.BTreeViews
+        >();
+        builder.RegisterTable<
+            global::LocalPingGeneratedRow,
+            global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingGenerated
+        >();
+        builder.RegisterTable<
+            global::LocalPingRow,
+            global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.LocalPingOutbox
         >();
         builder.RegisterTable<
             global::MultiTableRow,
@@ -5399,6 +6107,24 @@ static class ModuleRegistration
                     new global::SpacetimeDB.U128(0x1f1e1d1c1b1a1918UL, 0x1716151413121110UL),
                     new global::SpacetimeDB.U128(0x0f0e0d0c0b0a0908UL, 0x0706050403020100UL)
                 )
+            )
+        );
+        builder.RegisterLocalOutbox(
+            new global::SpacetimeDB.Internal.RawLocalOutboxDefV10(
+                "LocalPingGenerated",
+                "ReceiveLocalPing",
+                1,
+                [2, 3],
+                null
+            )
+        );
+        builder.RegisterLocalOutbox(
+            new global::SpacetimeDB.Internal.RawLocalOutboxDefV10(
+                "LocalPingOutbox",
+                "ReceiveLocalPing",
+                1,
+                [3, 2],
+                "OnLocalPingResult"
             )
         );
         builder.RegisterOutbox(
@@ -5616,7 +6342,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            OnPingResult.Invoke(reader, ctx);
+            OnLocalPingResult.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -5656,7 +6382,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            ScheduleImmediate.Invoke(reader, ctx);
+            OnPingResult.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -5696,7 +6422,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            SendOutboxes.Invoke(reader, ctx);
+            ReceiveLocalPing.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -5707,6 +6433,126 @@ static class ModuleRegistration
     }
 
     private static SpacetimeDB.Internal.Errno __call_reducer_7(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error,
+        int instanceId = 0
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                instanceId
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            ScheduleImmediate.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_8(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error,
+        int instanceId = 0
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                instanceId
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            SendLocalPing.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_9(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error,
+        int instanceId = 0
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                instanceId
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            SendOutboxes.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_10(
         ulong sender_0,
         ulong sender_1,
         ulong sender_2,
@@ -6007,6 +6853,42 @@ static class ModuleRegistration
                 instanceId
             ),
             7 => __call_reducer_7(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error,
+                instanceId
+            ),
+            8 => __call_reducer_8(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error,
+                instanceId
+            ),
+            9 => __call_reducer_9(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error,
+                instanceId
+            ),
+            10 => __call_reducer_10(
                 sender_0,
                 sender_1,
                 sender_2,

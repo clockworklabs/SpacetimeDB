@@ -52,6 +52,7 @@ public sealed class ModuleBuilder
     private readonly List<RawTableCachePolicyV10> tableCachePolicyDefs = [];
     private readonly List<RawScheduleDefV10> scheduleDefs = [];
     private readonly List<RawOutboxDefV10> outboxDefs = [];
+    private readonly List<RawLocalOutboxDefV10> localOutboxDefs = [];
     private readonly List<RawReducerDefV10> reducerDefs = [];
     private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
     private readonly List<RawProcedureDefV10> procedureDefs = [];
@@ -209,6 +210,12 @@ public sealed class ModuleBuilder
 
     public void RegisterOutbox(RawOutboxDefV10 outbox) => outboxDefs.Add(outbox);
 
+    /// <summary>
+    /// Registers an outbox calling a reducer of this module. The host resolves the reducer's
+    /// name and computes its signature hash, so the module doesn't.
+    /// </summary>
+    public void RegisterLocalOutbox(RawLocalOutboxDefV10 outbox) => localOutboxDefs.Add(outbox);
+
     public void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
     {
@@ -309,6 +316,7 @@ public sealed class ModuleBuilder
             .Select(l => l.FunctionName)
             .Concat(scheduleDefs.Select(s => s.FunctionName))
             .Concat(outboxDefs.Select(o => o.OnResultReducer).OfType<string>())
+            .Concat(localOutboxDefs.Select(o => o.OnResultReducer).OfType<string>())
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var reducer in reducerDefs)
@@ -384,6 +392,10 @@ public sealed class ModuleBuilder
         if (outboxDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.Outboxes(outboxDefs));
+        }
+        if (localOutboxDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.LocalOutboxes(localOutboxDefs));
         }
         // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
         if (caseConversionPolicy is { } policy)

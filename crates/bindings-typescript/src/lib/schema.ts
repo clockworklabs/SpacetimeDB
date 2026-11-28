@@ -200,6 +200,7 @@ export class ModuleContext {
     rowLevelSecurity: [],
     schedules: [],
     outboxes: [],
+    localOutboxes: [],
     tableCachePolicies: [],
     procedures: [],
     views: [],
@@ -243,6 +244,11 @@ export class ModuleContext {
     );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
     push(module.outboxes && { tag: 'Outboxes', value: module.outboxes });
+    // Hosts that predate local outboxes cannot decode this section, so only
+    // modules that declare one send it.
+    if (module.localOutboxes.length > 0) {
+      push({ tag: 'LocalOutboxes', value: module.localOutboxes });
+    }
     push({ tag: 'TableCachePolicies', value: module.tableCachePolicies });
     push(
       module.lifeCycleReducers && {

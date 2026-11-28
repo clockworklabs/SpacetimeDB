@@ -25,8 +25,18 @@ import {
   type TablesToSchema,
   type UntypedSchemaDef,
 } from '../lib/schema.ts';
-import type { UntypedTableSchema } from '../lib/table_schema.ts';
-import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders.ts';
+import {
+  isLocalOutbox,
+  type LocalOutboxMetadata,
+  type UntypedTableSchema,
+} from '../lib/table_schema.ts';
+import { outboxArgColumns } from '../lib/remote_module.ts';
+import {
+  TypeBuilder,
+  type ColumnBuilder,
+  type RowBuilder,
+  type RowObj,
+} from '../lib/type_builders.ts';
 import { hasOwn } from '../lib/util.ts';
 import {
   Router,
@@ -118,6 +128,14 @@ export class SchemaInner<
   pendingOutboxCallbacks: {
     table: UntypedTableSchema;
     functionName: string;
+  }[] = [];
+  /** Local outbox tables in this schema, by source name. */
+  localOutboxTables: Map<string, UntypedTableSchema> = new Map();
+  /** Reducers declared with `receiverFor`, resolved after registration. */
+  pendingLocalOutboxes: {
+    table: UntypedTableSchema;
+    functionName: string;
+    params: RowBuilder<RowObj>;
   }[] = [];
   pendingHttpRoutes: PendingHttpRoute[] = [];
   submoduleDispatchInfos: SubmoduleDispatchInfo[] = [];
@@ -214,6 +232,52 @@ export class SchemaInner<
     }
   }
 
+  /**
+   * Map each `receiverFor` reducer's parameters to its local outbox's columns.
+   * The host resolves the reducer's canonical name and signature.
+   */
+  resolveLocalOutboxes() {
+    const received = new Set<string>();
+    for (const { table, functionName, params } of this.pendingLocalOutboxes) {
+      const names = this.tableSourceNames.get(table);
+      if (names?.length !== 1) {
+        throw new TypeError(
+          'receiverFor must reference an outbox registered exactly once in this schema'
+        );
+      }
+      const tableName = names[0];
+      if (!this.localOutboxTables.has(tableName)) {
+        throw new TypeError(
+          `receiverFor requires a table declared with outbox: 'local', but ${tableName} is not one`
+        );
+      }
+      if (received.has(tableName)) {
+        throw new TypeError(
+          `Local outbox ${tableName} has more than one receiverFor reducer`
+        );
+      }
+      received.add(tableName);
+      const outbox = table.outbox as LocalOutboxMetadata;
+      const columns = Object.fromEntries(
+        Object.entries(params.row).map(([name, col]) => [name, col.typeBuilder])
+      );
+      this.moduleDef.localOutboxes.push({
+        tableName,
+        reducerSourceName: functionName,
+        targetColumn: outbox.targetColumn,
+        argColumns: outboxArgColumns(columns, table.rowType),
+        onResultReducer: undefined,
+      });
+    }
+    for (const tableName of this.localOutboxTables.keys()) {
+      if (!received.has(tableName)) {
+        throw new TypeError(
+          `Local outbox ${tableName} needs a reducer declared with receiverFor: ${tableName}`
+        );
+      }
+    }
+  }
+
   resolveOutboxCallbacks() {
     for (const { table, functionName } of this.pendingOutboxCallbacks) {
       const names = this.tableSourceNames.get(table);
@@ -222,9 +286,9 @@ export class SchemaInner<
           'onResult must reference an outbox registered exactly once in this schema'
         );
       }
-      const outbox = this.moduleDef.outboxes.find(
-        o => o.tableName === names[0]
-      );
+      const outbox =
+        this.moduleDef.outboxes.find(o => o.tableName === names[0]) ??
+        this.moduleDef.localOutboxes.find(o => o.tableName === names[0]);
       if (!outbox) throw new TypeError('onResult requires an outbox table');
       if (
         outbox.onResultReducer !== undefined &&
@@ -339,6 +403,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
     });
     this.#ctx.resolveSchedules();
+    this.#ctx.resolveLocalOutboxes();
     this.#ctx.resolveOutboxCallbacks();
     return this.#ctx.rawModuleDefV10();
   }
@@ -1009,7 +1074,9 @@ export function schema<
         tableSourceNames.push(tableDef.sourceName);
       }
       ctx.moduleDef.tables.push(tableDef);
-      if (table.outbox) {
+      if (table.outbox && isLocalOutbox(table.outbox)) {
+        ctx.localOutboxTables.set(tableDef.sourceName, table);
+      } else if (table.outbox) {
         ctx.moduleDef.outboxes.push({
           ...table.outbox,
           tableName: tableDef.sourceName,

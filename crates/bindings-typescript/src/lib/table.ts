@@ -1,5 +1,5 @@
 import type { RemoteReducer } from './remote_module.ts';
-import { makeOutbox } from './remote_module.ts';
+import { checkOutboxShape, makeOutbox } from './remote_module.ts';
 import type { ProcedureExport, ReducerExport, t } from '../server/index.ts';
 import type { errors } from '../server/errors.ts';
 import {
@@ -23,7 +23,9 @@ import type {
 } from './indexes.ts';
 import ScheduleAt from './schedule_at.ts';
 import type {
+  LocalOutboxMetadata,
   OutboxMetadata,
+  RemoteOutboxMetadata,
   TableSchema,
   TableSchedule,
 } from './table_schema.ts';
@@ -219,12 +221,18 @@ export type TableOpts<Row extends RowObj> = {
   outbox?: undefined;
 };
 
-/** Options for an insert-only outbox using a generated receiver handle. */
+/**
+ * Options for an insert-only outbox.
+ *
+ * - `{ receiver }` sends to a generated receiver handle from another module.
+ * - `'local'` sends to a reducer in this module that names this table with
+ *   `receiverFor`. The target can be any database running this module.
+ */
 export type OutboxTableOpts<Row extends RowObj> = Omit<
   TableOpts<Row>,
   'outbox'
 > & {
-  outbox: { receiver: RemoteReducer };
+  outbox: { receiver: RemoteReducer } | 'local';
 };
 
 /**
@@ -249,10 +257,15 @@ type OptsConstraints<Opts extends TableOpts<any> | OutboxTableOpts<any>> =
 
 // Ordinary TableOpts annotations must keep their existing mutable table API.
 // OutboxTableOpts requires the discriminator, even when options are widened.
-type OptsOutbox<Opts> = Opts extends {
-  outbox: object;
-}
-  ? OutboxMetadata
+// Widened options that allow either kind still declare an outbox.
+type OptsOutbox<Opts> = Opts extends { outbox: infer Outbox }
+  ? [Outbox] extends [undefined]
+    ? undefined
+    : [Outbox] extends ['local']
+      ? LocalOutboxMetadata
+      : [Outbox] extends [object]
+        ? RemoteOutboxMetadata
+        : OutboxMetadata
   : undefined;
 
 /**
@@ -537,10 +550,18 @@ export function table<
       ? { scheduleAtCol, reducer: scheduled }
       : undefined;
 
-  const receiver = opts.outbox?.receiver;
-  const outbox = receiver
-    ? makeOutbox(receiver, row, pk, !!scheduled || isEvent)
-    : undefined;
+  const scheduledOrEvent = !!scheduled || isEvent;
+  let outbox: OutboxMetadata | undefined;
+  if (opts.outbox === 'local') {
+    // The receiving reducer is not known yet. Schema registration maps its
+    // parameters to columns once that reducer names this table.
+    outbox = {
+      local: true,
+      targetColumn: checkOutboxShape(row, pk, scheduledOrEvent),
+    };
+  } else if (opts.outbox !== undefined) {
+    outbox = makeOutbox(opts.outbox.receiver, row, pk, scheduledOrEvent);
+  }
 
   return {
     outbox: outbox as OptsOutbox<Opts>,

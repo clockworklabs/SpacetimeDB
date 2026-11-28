@@ -435,6 +435,130 @@ fn idc_outbox_uses_regenerated_bindings_after_argument_reordering() {
     suite.send_detailed_ping("after-update");
 }
 
+/// The module path of a fixture prepared by [`prepare_fixture`] under `name`.
+/// `spacetime init` puts a C# module in a `spacetimedb` subdirectory.
+fn fixture_module_path(name: &str, fixture: &str) -> String {
+    if fixture.ends_with("-cs") {
+        format!("./{name}/spacetimedb")
+    } else {
+        format!("./{name}")
+    }
+}
+
+/// Copy a Rust, TypeScript (`-ts`) or C# (`-cs`) module fixture into the project as `name`,
+/// using the workspace's bindings. TypeScript dependencies are installed when `install` is set.
+fn prepare_fixture(test: &mut Smoketest, name: &str, fixture_name: &str, install: bool) {
+    use spacetimedb_smoketests::{pnpm, workspace_root};
+
+    let dir = test.project_dir.path().join(name);
+    let fixture = workspace_root().join("crates/smoketests/modules").join(fixture_name);
+    if fixture_name.ends_with("-cs") {
+        let source = std::fs::read_to_string(fixture.join("Lib.cs")).unwrap();
+        test.prepare_csharp_module_source(name, name, &source).unwrap();
+        return;
+    }
+    if !fixture_name.ends_with("-ts") {
+        copy_module_fixture(fixture_name, &dir).unwrap();
+        patch_module_cargo_to_local_bindings(&dir).unwrap();
+        return;
+    }
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::copy(fixture.join("src/index.ts"), dir.join("src/index.ts")).unwrap();
+    std::fs::copy(fixture.join("tsconfig.json"), dir.join("tsconfig.json")).unwrap();
+    let mut package: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixture.join("package.json")).unwrap()).unwrap();
+    package["dependencies"]["spacetimedb"] =
+        format!("file:{}", workspace_root().join("crates/bindings-typescript").display()).into();
+    std::fs::write(dir.join("package.json"), serde_json::to_vec_pretty(&package).unwrap()).unwrap();
+    if install {
+        pnpm(&["install"], &dir).unwrap();
+    }
+}
+
+#[test]
+fn idc_self_outbox_uses_none_case_policy() {
+    check_self_outbox("idc-self-outbox");
+}
+
+#[test]
+fn idc_typescript_self_outbox_uses_none_case_policy() {
+    spacetimedb_smoketests::require_pnpm!();
+    spacetimedb_smoketests::build_typescript_sdk().expect("failed to build TypeScript SDK");
+    check_self_outbox("idc-self-outbox-ts");
+}
+
+#[test]
+fn idc_csharp_self_outbox_uses_none_case_policy() {
+    spacetimedb_smoketests::require_dotnet!();
+    check_self_outbox("idc-self-outbox-cs");
+}
+
+/// Publish a module whose outbox calls its own reducer, without receiver bindings,
+/// and send one message to the database itself.
+fn check_self_outbox(fixture: &str) {
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let database = format!("idc-self-{}", random_string());
+    prepare_fixture(&mut test, "self_outbox", fixture, true);
+    let module_dir = test
+        .project_dir
+        .path()
+        .join(fixture_module_path("self_outbox", fixture));
+
+    let output = test
+        .spacetime(&[
+            "publish",
+            "--no-config",
+            "--server",
+            &test.server_url,
+            "--module-path",
+            module_dir.to_str().unwrap(),
+            "--yes=all",
+            &database,
+        ])
+        .expect("failed to publish self-outbox module");
+    let identity = parse_identity_from_publish_output(&output).expect("publish output should contain an identity");
+    test.database_identity = Some(identity.clone());
+    let message = serde_json::json!([42, [[0, [7, [0, "self-message"]]], [0, [8, [1, []]]], [1, []]]]);
+    test.call(
+        "enqueuePing",
+        &[&serde_json::to_string(&identity).unwrap(), &message.to_string()],
+    )
+    .expect("failed to enqueue self-referential message");
+
+    let rows = |sql: &str| {
+        let output = test
+            .spacetime(&[
+                "sql",
+                "--no-config",
+                "--server",
+                &test.server_url,
+                "--format",
+                "json",
+                &database,
+                sql,
+            ])
+            .expect("failed to query self-outbox module");
+        let result: serde_json::Value = serde_json::from_str(&output).expect("invalid SQL JSON output");
+        result[0]["rows"].as_array().unwrap().clone()
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let callbacks = rows("SELECT body, error FROM ping_results");
+        let pending = rows("SELECT id FROM outbound_ping");
+        let delivered = rows("SELECT body FROM delivered_ping");
+        if !callbacks.is_empty() && pending.is_empty() {
+            assert_eq!(delivered, vec![serde_json::json!([message])]);
+            assert_eq!(callbacks, vec![serde_json::json!([message, [1, []]])]);
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "self IDC did not finish: delivered={delivered:?}, callbacks={callbacks:?}, pending={pending:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 #[test]
 fn idc_generated_receiver_types_are_scoped_by_dependency() {
     // The world outbox uses the Rust shortcut; the auth outbox uses a manual table.
@@ -554,7 +678,7 @@ impl IdcTest {
     /// Like `new_with_fixtures`, but `auth_fixture` publishes a separate receiver for the
     /// sender's `auth` dependency. Without it, both dependencies name the same receiver.
     fn new_with_receivers(receiver_fixture: &str, auth_fixture: Option<&str>, sender_fixture: &str) -> Self {
-        use spacetimedb_smoketests::{build_typescript_sdk, pnpm, workspace_root};
+        use spacetimedb_smoketests::{build_typescript_sdk, pnpm};
 
         let mut fixtures = vec![("receiver", receiver_fixture), ("sender", sender_fixture)];
         fixtures.extend(auth_fixture.map(|fixture| ("auth", fixture)));
@@ -566,39 +690,10 @@ impl IdcTest {
         let auth_db = auth_fixture.map(|_| format!("idc-ts-auth-{}", random_string()));
         let sender_db = format!("idc-ts-sender-{}", random_string());
         let project = test.project_dir.path().to_path_buf();
-        // `spacetime init` puts a C# module in a `spacetimedb` subdirectory.
-        let module_path = |name: &str, fixture: &str| {
-            if fixture.ends_with("-cs") {
-                format!("./{name}/spacetimedb")
-            } else {
-                format!("./{name}")
-            }
-        };
+        let module_path = fixture_module_path;
         for &(name, fixture_name) in &fixtures {
-            let dir = project.join(name);
-            let fixture = workspace_root().join("crates/smoketests/modules").join(fixture_name);
-            if fixture_name.ends_with("-cs") {
-                let source = std::fs::read_to_string(fixture.join("Lib.cs")).unwrap();
-                test.prepare_csharp_module_source(name, name, &source).unwrap();
-                continue;
-            }
-            if !fixture_name.ends_with("-ts") {
-                copy_module_fixture(fixture_name, &dir).unwrap();
-                patch_module_cargo_to_local_bindings(&dir).unwrap();
-                continue;
-            }
-            std::fs::create_dir_all(dir.join("src")).unwrap();
-            std::fs::copy(fixture.join("src/index.ts"), dir.join("src/index.ts")).unwrap();
-            std::fs::copy(fixture.join("tsconfig.json"), dir.join("tsconfig.json")).unwrap();
-            let mut package: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(fixture.join("package.json")).unwrap()).unwrap();
-            package["dependencies"]["spacetimedb"] =
-                format!("file:{}", workspace_root().join("crates/bindings-typescript").display()).into();
-            std::fs::write(dir.join("package.json"), serde_json::to_vec_pretty(&package).unwrap()).unwrap();
             // The sender is installed once its bindings are generated.
-            if name != "sender" {
-                pnpm(&["install"], &dir).unwrap();
-            }
+            prepare_fixture(&mut test, name, fixture_name, name != "sender");
         }
         let mut children = Vec::new();
         if let (Some(database), Some(fixture)) = (&auth_db, auth_fixture) {

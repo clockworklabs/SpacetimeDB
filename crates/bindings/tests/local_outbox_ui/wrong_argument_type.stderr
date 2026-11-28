@@ -1,0 +1,16 @@
+error[E0308]: mismatched types
+ --> tests/local_outbox_ui/wrong_argument_type.rs:1:1
+  |
+1 | #[spacetimedb::reducer]
+  | ^^^^^^^^^^^^^^^^^^^^^^^ expected `String`, found `u64`
+2 | pub fn receive_ping(_: &spacetimedb::ReducerContext, body: String) {
+  |                                                            ------ expected due to this
+...
+6 | #[spacetimedb::table(accessor = wrong_argument_type, outbox(crate::receive_ping))]
+  | ---------------------------------------------------------------------------------- in this attribute macro expansion
+  |
+  = note: this error originates in the macro `__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body` which comes from the expansion of the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: try using a conversion method
+  |
+1 | #[spacetimedb::reducer].to_string()
+  |                        ++++++++++++

@@ -26,11 +26,32 @@ export type TableSchedule = {
   reducer: () => UntypedScheduledFunctionExport;
 };
 
-/** Outbox metadata before table and callback names are resolved. */
-export type OutboxMetadata = Omit<
+/** Metadata for an outbox to a generated receiver handle, before table and callback names are resolved. */
+export type RemoteOutboxMetadata = Omit<
   RawOutboxDefV10,
   'tableName' | 'onResultReducer'
 >;
+
+/**
+ * Metadata for an outbox to a reducer in this module.
+ *
+ * The receiving reducer names the table with `receiverFor`. The host resolves
+ * the reducer and computes its signature, so the module sends no hash.
+ */
+export type LocalOutboxMetadata = {
+  readonly local: true;
+  readonly targetColumn: number;
+};
+
+/** Outbox metadata before table, receiver and callback names are resolved. */
+export type OutboxMetadata = RemoteOutboxMetadata | LocalOutboxMetadata;
+
+/** Whether outbox metadata is for a local receiver. */
+export function isLocalOutbox(
+  outbox: OutboxMetadata
+): outbox is LocalOutboxMetadata {
+  return 'local' in outbox;
+}
 
 export type ScheduleTableForParams<Params extends Record<string, any>> =
   HasExactlyOneKnownKey<Params> extends true

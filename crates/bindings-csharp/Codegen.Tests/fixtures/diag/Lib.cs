@@ -851,6 +851,69 @@ public partial struct TestOutboxParamIssues
     public string? Extra;
 }
 
+public static partial class LocalOutboxDiag
+{
+    [SpacetimeDB.Reducer]
+    public static void Receive(ReducerContext ctx, string name, int count) { }
+
+    public static void NotAReducer(ReducerContext ctx, string name) { }
+}
+
+// No such reducer; a method without [Reducer]; a lifecycle reducer; receiver bindings with
+// OutboxReducer; OutboxReducer without Outbox.
+[SpacetimeDB.Table(
+    Accessor = "LocalOutboxMissingReducer",
+    Outbox = typeof(LocalOutboxDiag),
+    OutboxReducer = "Missing"
+)]
+[SpacetimeDB.Table(
+    Accessor = "LocalOutboxNotAReducer",
+    Outbox = typeof(LocalOutboxDiag),
+    OutboxReducer = nameof(LocalOutboxDiag.NotAReducer)
+)]
+[SpacetimeDB.Table(
+    Accessor = "LocalOutboxLifecycle",
+    Outbox = typeof(OnResultIssues),
+    OutboxReducer = nameof(OnResultIssues.LifecycleResult)
+)]
+[SpacetimeDB.Table(
+    Accessor = "LocalOutboxWithBindings",
+    Outbox = typeof(OutboxDiag.Reducers.Remote),
+    OutboxReducer = "Remote"
+)]
+[SpacetimeDB.Table(Accessor = "LocalOutboxWithoutOutbox", OutboxReducer = "Receive")]
+public partial struct TestLocalOutboxBadReducer
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target]
+    public Identity Target;
+
+    public string Name;
+    public int Count;
+}
+
+[SpacetimeDB.Table(
+    Accessor = "LocalOutboxColumnIssues",
+    Outbox = typeof(LocalOutboxDiag),
+    OutboxReducer = nameof(LocalOutboxDiag.Receive)
+)]
+public partial struct TestLocalOutboxColumnIssues
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    // A local outbox's target is a SpacetimeDB.Identity.
+    [SpacetimeDB.Target]
+    public OutboxDiag.Identity Target;
+
+    // `count` is an int, and there's no column for `name`.
+    public uint Count;
+}
+
 [SpacetimeDB.Table]
 public partial struct TestOutboxAttributesWithoutOutbox
 {

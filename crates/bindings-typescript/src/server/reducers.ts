@@ -5,6 +5,7 @@ import { type UntypedSchemaDef } from '../lib/schema.ts';
 import { deepEqual } from '../lib/util.ts';
 import { t } from '../lib/type_builders.ts';
 import type {
+  LocalOutboxMetadata,
   OutboxMetadata,
   ScheduleTableForParams,
   UntypedTableSchema,
@@ -28,6 +29,12 @@ export interface ReducerOpts<Params extends ParamsObj = ParamsObj> {
   name: string;
   onSchedule?: ScheduleTableForParams<Params>;
   onResult?: UntypedTableSchema & { readonly outbox: OutboxMetadata };
+  /**
+   * The local outbox table whose rows this reducer receives. The table must be
+   * declared with `outbox: 'local'`, and its columns must match this reducer's
+   * parameters by name or by `.param({ name })`.
+   */
+  receiverFor?: UntypedTableSchema & { readonly outbox: LocalOutboxMetadata };
 }
 
 export type ReducerOptsWithOptionalName<Params extends ParamsObj = ParamsObj> =
@@ -111,6 +118,18 @@ export function registerReducer(
         'onResult requires the outbox row followed by Result<Unit, String>'
       );
     }
+  }
+
+  if (opts?.receiverFor) {
+    if (lifecycle) {
+      throw new TypeError('A lifecycle reducer cannot receive from an outbox');
+    }
+    // Resolved after all tables and exports are registered.
+    ctx.pendingLocalOutboxes.push({
+      table: opts.receiverFor,
+      functionName: exportName,
+      params,
+    });
   }
 
   if (params.typeName === undefined) {
