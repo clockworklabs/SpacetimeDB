@@ -336,6 +336,15 @@ export type RawLifeCycleReducerDefV10 = __Infer<
   typeof RawLifeCycleReducerDefV10
 >;
 
+export const RawLocalOutboxDefV10 = __t.object('RawLocalOutboxDefV10', {
+  tableName: __t.string(),
+  reducerSourceName: __t.string(),
+  targetColumn: __t.u16(),
+  argColumns: __t.array(__t.u16()),
+  onResultReducer: __t.option(__t.string()),
+});
+export type RawLocalOutboxDefV10 = __Infer<typeof RawLocalOutboxDefV10>;
+
 export const RawMigrationDefV10 = __t.object('RawMigrationDefV10', {
   schemaHash: __t.u256(),
   name: __t.string(),
@@ -438,6 +447,9 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   },
   get Migrations() {
     return __t.array(RawMigrationDefV10);
+  },
+  get LocalOutboxes() {
+    return __t.array(RawLocalOutboxDefV10);
   },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;

@@ -1,4 +1,4 @@
-import type { OutboxMetadata } from './table_schema.ts';
+import type { RemoteOutboxMetadata } from './table_schema.ts';
 import { table } from './table.ts';
 import {
   IdentityBuilder,
@@ -80,13 +80,12 @@ export function remoteModule<
   return { reducers: handles, identity, outbox };
 }
 
-/** Resolve receiver parameters by name, independently of sender column order. */
-export function makeOutbox(
-  receiver: RemoteReducer,
+/** Check the columns every outbox needs, and return the target column index. */
+export function checkOutboxShape(
   row: RowBuilder<RowObj>,
   primaryKey: number[],
   scheduledOrEvent: boolean
-): OutboxMetadata {
+): number {
   const columns = Object.entries(row.row);
   if (scheduledOrEvent)
     throw new TypeError('Outbox tables cannot be scheduled or event tables');
@@ -113,7 +112,16 @@ export function makeOutbox(
       'Outbox tables require exactly one identity().target() column'
     );
   }
-  const argColumns = Object.entries(receiver.params).map(([name, type]) => {
+  return targets[0];
+}
+
+/** Map receiver parameters to outbox columns by name, in parameter order. */
+export function outboxArgColumns(
+  params: ElementsObj,
+  row: RowBuilder<RowObj>
+): number[] {
+  const columns = Object.entries(row.row);
+  return Object.entries(params).map(([name, type]) => {
     const matches = columns.flatMap(([key, col], i) =>
       (col.columnMetadata.paramName ?? key) === name ? [i] : []
     );
@@ -132,15 +140,26 @@ export function makeOutbox(
     }
     return index;
   });
+}
+
+/** Resolve receiver parameters by name, independently of sender column order. */
+export function makeOutbox(
+  receiver: RemoteReducer,
+  row: RowBuilder<RowObj>,
+  primaryKey: number[],
+  scheduledOrEvent: boolean
+): RemoteOutboxMetadata {
+  const targetColumn = checkOutboxShape(row, primaryKey, scheduledOrEvent);
+  const argColumns = outboxArgColumns(receiver.params, row);
   const module = receiverModules.get(receiver);
-  const target = columns[targets[0]][1].typeBuilder;
+  const target = row.row[Object.keys(row.row)[targetColumn]].typeBuilder;
   if (module === undefined || identityModules.get(target) !== module) {
     throw new TypeError(
       'Outbox target must use the selected receiver module identity() builder'
     );
   }
   return {
-    targetColumn: targets[0],
+    targetColumn,
     argColumns,
     remoteReducer: receiver.name,
     signatureHash: receiver.signatureHash,

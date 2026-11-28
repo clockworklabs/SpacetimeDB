@@ -195,3 +195,42 @@ db.view(
       .where(row => row.world.eq(ctx.sender).or(row.admin.ne(ctx.sender)))
       .build()
 );
+
+// A local outbox sends to a reducer in this module, which names it with receiverFor.
+const localPing = table(
+  { outbox: 'local' },
+  {
+    msgId: t.u64().primaryKey().autoInc(),
+    target: t.identity().target(),
+    note: t.string(),
+  }
+);
+const localDb = schema({ localPing, ordinary, outbox });
+localDb.reducer({ receiverFor: localPing }, { note: t.string() }, () => {});
+localDb.reducer(
+  // @ts-expect-error receiverFor requires a local outbox, not an ordinary table.
+  { receiverFor: ordinary },
+  { note: t.string() },
+  () => {}
+);
+localDb.reducer(
+  // @ts-expect-error receiverFor requires a local outbox, not a remote one.
+  { receiverFor: outbox },
+  { note: t.string() },
+  () => {}
+);
+localDb.reducer(
+  { onResult: localPing },
+  { row: localPing.rowType, result: t.result(t.unit(), t.string()) },
+  () => {}
+);
+localDb.reducer({ to: t.identity() }, (ctx, { to }) => {
+  ctx.db.localPing.insert({ msgId: 0n, target: to, note: 'hello' });
+  ctx.db.localPing.msgId.find(1n);
+  // @ts-expect-error Local outboxes cannot be updated.
+  ctx.db.localPing.msgId.update({ msgId: 1n, target: to, note: 'hello' });
+  // @ts-expect-error Local outbox rows cannot be deleted.
+  ctx.db.localPing.delete({ msgId: 1n, target: to, note: 'hello' });
+  // @ts-expect-error Local outboxes cannot be cleared.
+  ctx.db.localPing.clear();
+});
